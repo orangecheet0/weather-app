@@ -1,11 +1,45 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
+
+// Define TypeScript interfaces for weather data
+interface Weather {
+  name: string;
+  main: {
+    temp: number;
+    humidity: number;
+  };
+  weather: {
+    description: string;
+    icon: string;
+  }[];
+  wind: {
+    speed: number;
+  };
+  coord: {
+    lat: number;
+    lon: number;
+  };
+}
+
+interface Forecast {
+  list: {
+    dt: number;
+    main: {
+      temp: number;
+    };
+    weather: {
+      description: string;
+      icon: string;
+    }[];
+  }[];
+}
 
 export default function Home() {
   const [city, setCity] = useState('');
-  const [weather, setWeather] = useState<any>(null);
-  const [forecast, setForecast] = useState<any>(null);
+  const [weather, setWeather] = useState<Weather | null>(null);
+  const [forecast, setForecast] = useState<Forecast | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mapLayer, setMapLayer] = useState('temperature');
@@ -39,8 +73,8 @@ export default function Home() {
         throw new Error(forecastData.message || 'Forecast unavailable');
       }
       setForecast(forecastData);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -89,9 +123,11 @@ export default function Home() {
           <h2 className="text-2xl font-semibold">{weather.name}</h2>
           <p className="text-lg capitalize">{weather.weather[0].description}</p>
           <p className="text-3xl">{Math.round(weather.main.temp)}°C</p>
-          <img
+          <Image
             src={`http://openweathermap.org/img/wn/${weather.weather[0].icon}.png`}
             alt="Weather icon"
+            width={64}
+            height={64}
             className="w-16 h-16"
           />
           <div className="grid grid-cols-2 gap-4 mt-4">
@@ -104,16 +140,18 @@ export default function Home() {
       {/* Forecast */}
       {forecast && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-          {forecast.list.slice(0, 5).map((item: any, index: number) => (
+          {forecast.list.slice(0, 5).map((item, index) => (
             <div key={index} className="bg-white p-4 rounded shadow">
               <p className="font-medium">
                 {new Date(item.dt * 1000).toLocaleDateString()}
               </p>
               <p>{Math.round(item.main.temp)}°C</p>
               <p className="capitalize">{item.weather[0].description}</p>
-              <img
+              <Image
                 src={`http://openweathermap.org/img/wn/${item.weather[0].icon}.png`}
                 alt="Weather icon"
+                width={48}
+                height={48}
                 className="w-12 h-12"
               />
             </div>
