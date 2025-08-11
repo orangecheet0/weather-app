@@ -57,8 +57,9 @@ export async function GET(request: Request) {
     }
   } catch (error) {
     console.error('OneCall fetch error:', error);
+    const details = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { message: 'Failed to fetch alert data', details: error.message },
+      { message: 'Failed to fetch alert data', details },
       { status: 500 }
     );
   }
