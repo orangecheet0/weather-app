@@ -21,11 +21,14 @@ import {
   Share2,
   ArrowUp,
   ArrowDown,
+  ExternalLink,
+  Maximize2,
+  X,
 } from "lucide-react";
 
-// -----------------------------
-// Types
-// -----------------------------
+/* =========================
+   Types
+   ========================= */
 
 type Unit = "imperial" | "metric";
 
@@ -72,9 +75,9 @@ interface AlertItem {
   areaDesc?: string;
 }
 
-// -----------------------------
-// Helpers
-// -----------------------------
+/* =========================
+   Helpers
+   ========================= */
 
 const DEFAULT_CITY = {
   name: "Huntsville",
@@ -100,7 +103,11 @@ function formatWind(w: number | null | undefined, unit: Unit) {
 
 function shortDate(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function shortTime(iso: string) {
@@ -109,7 +116,7 @@ function shortTime(iso: string) {
 }
 
 function weatherIcon(code: number | null) {
-  // Compact mapping for Open‑Meteo weather codes
+  // Compact mapping for Open-Meteo weather codes
   if (code == null) return <Cloud className="h-6 w-6" aria-hidden />;
   if ([0].includes(code)) return <Sun className="h-6 w-6" aria-hidden />; // Clear
   if ([1, 2, 3].includes(code)) return <Cloud className="h-6 w-6" aria-hidden />; // Partly/Cloudy
@@ -121,14 +128,17 @@ function weatherIcon(code: number | null) {
   return <Cloud className="h-6 w-6" aria-hidden />;
 }
 
-function windyEmbedUrl(c: Coords, unit: Unit) {
-  const base = "https://embed.windy.com/embed2.html";
+function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
+  const { lat, lon } = coords;
+  const temp = unit === "imperial" ? "F" : "C";
+  // Windy expects "km/h" (slash is fine; URLSearchParams will encode it).
+  const wind = unit === "imperial" ? "mph" : "km/h";
   const params = new URLSearchParams({
-    lat: String(c.lat),
-    lon: String(c.lon),
-    detailLat: String(c.lat),
-    detailLon: String(c.lon),
-    zoom: "7",
+    lat: String(lat),
+    lon: String(lon),
+    detailLat: String(lat),
+    detailLon: String(lon),
+    zoom: String(zoom),
     level: "surface",
     overlay: "radar",
     product: "radar",
@@ -140,20 +150,21 @@ function windyEmbedUrl(c: Coords, unit: Unit) {
     type: "map",
     location: "coordinates",
     detail: "true",
-    metricWind: unit === "imperial" ? "mph" : "kph",
-    metricTemp: unit === "imperial" ? "F" : "C",
-  }).toString();
-  return `${base}?${params}`;
+    metricWind: wind,
+    metricTemp: temp,
+  });
+  return `https://embed.windy.com/embed2.html?${params.toString()}`;
 }
 
-// Palette map used for dynamic backgrounds. Keep explicit class names for Tailwind JIT.
+/* ===== Background theme (time+weather aware) ===== */
+
 const THEMES = {
-  clearDay: "from-sky-400/10 via-slate-900 to-slate-950",
-  clearNight: "from-indigo-700/10 via-slate-950 to-black",
-  cloudy: "from-slate-700/20 via-slate-900 to-slate-950",
-  rain: "from-sky-700/20 via-slate-950 to-slate-950",
-  snow: "from-cyan-100/10 via-slate-900 to-slate-950",
-  storm: "from-indigo-800/30 via-slate-950 to-black",
+  clearDay: "from-sky-300 via-sky-500 to-indigo-700",
+  clearNight: "from-indigo-900 via-slate-950 to-black",
+  cloudy: "from-slate-700 via-slate-900 to-slate-950",
+  rain: "from-sky-700 via-slate-950 to-slate-950",
+  snow: "from-cyan-200 via-slate-800 to-slate-950",
+  storm: "from-indigo-800 via-slate-950 to-black",
 } as const;
 
 type ThemeKey = keyof typeof THEMES;
@@ -170,9 +181,109 @@ function pickTheme(code: number | null | undefined, isoTime?: string): ThemeKey 
   return "clearDay";
 }
 
-// -----------------------------
-// Main Component
-// -----------------------------
+/* =========================
+   Full-screen Radar Panel
+   ========================= */
+
+function MapPanel({
+  coords,
+  unit,
+  className,
+}: {
+  coords: Coords;
+  unit: Unit;
+  className?: string;
+}) {
+  const [full, setFull] = useState(false);
+  const href = useMemo(() => windyUrl(coords, unit, 8), [coords, unit]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFull(false);
+    };
+    if (full) window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full]);
+
+  const frame = (
+    <iframe
+      title="Radar Map"
+      src={href}
+      className="w-full h-full rounded-xl border border-white/10 shadow-xl"
+      loading="lazy"
+      referrerPolicy="no-referrer-when-downgrade"
+    />
+  );
+
+  return (
+    <>
+      {/* Inline map (taller by default) */}
+      <div
+        className={clsx(
+          "relative rounded-xl overflow-hidden",
+          "bg-black/20 ring-1 ring-white/10",
+          className
+        )}
+        style={{ height: "640px" }}
+      >
+        {/* controls */}
+        <div className="absolute right-3 top-3 z-10 flex gap-2">
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 rounded-md bg-white/10 px-3 py-1.5 text-xs backdrop-blur hover:bg-white/20"
+            title="Open map in a new tab"
+          >
+            <ExternalLink className="h-4 w-4" />
+            New tab
+          </a>
+          <button
+            onClick={() => setFull(true)}
+            className="inline-flex items-center gap-1 rounded-md bg-white/10 px-3 py-1.5 text-xs backdrop-blur hover:bg-white/20"
+            title="Expand to full screen"
+            aria-expanded={full}
+          >
+            <Maximize2 className="h-4 w-4" />
+            Expand
+          </button>
+        </div>
+
+        {/* map */}
+        <div className="absolute inset-0">{frame}</div>
+      </div>
+
+      {/* Full-screen modal */}
+      {full && (
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <button
+            onClick={() => setFull(false)}
+            className="absolute right-4 top-4 z-[101] inline-flex items-center gap-1 rounded-md bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20"
+            title="Close full-screen map"
+          >
+            <X className="h-4 w-4" />
+            Close
+          </button>
+          <div className="absolute inset-0 p-4 md:p-6 lg:p-8">
+            <div className="h-full w-full rounded-2xl ring-1 ring-white/10 overflow-hidden bg-black/40">
+              <iframe
+                title="Radar Map (Full Screen)"
+                src={href}
+                className="h-full w-full"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* =========================
+   Main Page
+   ========================= */
 
 export default function Page() {
   const router = useRouter();
@@ -205,9 +316,7 @@ export default function Page() {
   const ctrlForecast = useRef<AbortController | null>(null);
   const ctrlAlerts = useRef<AbortController | null>(null);
 
-  // -------------
-  // Boot
-  // -------------
+  /* ----- Boot ----- */
   useEffect(() => {
     const usp = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
     const uParam = usp?.get("u");
@@ -248,9 +357,7 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // -------------
-  // Keep URL shareable
-  // -------------
+  /* ----- Keep URL shareable ----- */
   useEffect(() => {
     if (!coords) return;
     const usp = new URLSearchParams(window.location.search);
@@ -260,25 +367,21 @@ export default function Page() {
     router.replace(`?${usp.toString()}`);
   }, [coords, unit, router]);
 
-  // -------------
-  // Forecast fetching (re-runs on unit or coords change)
-  // -------------
+  /* ----- Forecast fetching ----- */
   useEffect(() => {
     if (!coords) return;
     fetchForecast(coords, unit);
   }, [coords, unit]);
 
-  // -------------
-  // Alerts (best effort; CORS may block in some regions)
-  // -------------
+  /* ----- Alerts ----- */
   useEffect(() => {
     if (!coords) return;
     fetchAlerts(coords);
   }, [coords]);
 
-  // -----------------------------
-  // API calls
-  // -----------------------------
+  /* =========================
+     API calls
+     ========================= */
 
   async function reverseLookup(c: Coords) {
     try {
@@ -307,7 +410,7 @@ export default function Page() {
       const data = await res.json();
       const first = data?.results?.[0];
       if (!first) {
-        setError("No matches. Try a city + state, like \"Huntsville, AL\".");
+        setError('No matches. Try a city + state, like "Huntsville, AL".');
         return;
       }
       setActivePlace({ name: first.name, admin1: first.admin1, country: first.country_code });
@@ -449,9 +552,9 @@ export default function Page() {
     }
   }
 
-  // -----------------------------
-  // Derived
-  // -----------------------------
+  /* =========================
+     Derived
+     ========================= */
 
   const placeLabel = useMemo(() => {
     if (!activePlace) return "";
@@ -460,17 +563,16 @@ export default function Page() {
   }, [activePlace]);
 
   const themeKey = useMemo<ThemeKey>(() => pickTheme(current?.weatherCode ?? null, current?.time), [current]);
-
   const today = daily[0];
   const nextHour = hourly[0];
 
-  // -----------------------------
-  // UI
-  // -----------------------------
+  /* =========================
+     UI
+     ========================= */
 
   return (
-    <div className={clsx("min-h-screen text-slate-100 bg-gradient-to-b", THEMES[themeKey])}>
-      {/* Animated background glows */}
+    <div className={clsx("relative min-h-screen text-slate-100 selection:bg-sky-300/40 bg-gradient-to-br", THEMES[themeKey])}>
+      {/* soft animated glows */}
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <motion.div
           className="absolute -top-20 -right-20 h-80 w-80 rounded-full blur-3xl"
@@ -491,10 +593,15 @@ export default function Page() {
         <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
           <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-2">
             <Sun className="h-6 w-6 text-sky-300" aria-hidden />
-            <span className="font-semibold tracking-wide bg-gradient-to-r from-sky-300 via-cyan-200 to-emerald-200 bg-clip-text text-transparent">AlWeather</span>
+            <span className="font-semibold tracking-wide bg-gradient-to-r from-sky-300 via-cyan-200 to-emerald-200 bg-clip-text text-transparent">
+              AlWeather
+            </span>
           </motion.div>
+
           <div className="ml-auto flex items-center gap-2 w-full max-w-xl">
-            <label htmlFor="city" className="sr-only">Search city</label>
+            <label htmlFor="city" className="sr-only">
+              Search city
+            </label>
             <input
               id="city"
               value={query}
@@ -513,20 +620,14 @@ export default function Page() {
             <div role="group" aria-label="Unit" className="hidden sm:flex rounded-xl overflow-hidden ring-1 ring-white/10">
               <button
                 onClick={() => setUnit("imperial")}
-                className={clsx(
-                  "px-3 py-2 text-sm",
-                  unit === "imperial" ? "bg-sky-600 text-white" : "bg-slate-900/60 hover:bg-white/5"
-                )}
+                className={clsx("px-3 py-2 text-sm", unit === "imperial" ? "bg-sky-600 text-white" : "bg-slate-900/60 hover:bg-white/5")}
                 aria-pressed={unit === "imperial"}
               >
                 °F / mph
               </button>
               <button
                 onClick={() => setUnit("metric")}
-                className={clsx(
-                  "px-3 py-2 text-sm",
-                  unit === "metric" ? "bg-sky-600 text-white" : "bg-slate-900/60 hover:bg-white/5"
-                )}
+                className={clsx("px-3 py-2 text-sm", unit === "metric" ? "bg-sky-600 text-white" : "bg-slate-900/60 hover:bg-white/5")}
                 aria-pressed={unit === "metric"}
               >
                 °C / km/h
@@ -538,7 +639,9 @@ export default function Page() {
                   navigator.clipboard.writeText(window.location.href);
                   setCopied(true);
                   setTimeout(() => setCopied(false), 1600);
-                } catch {}
+                } catch {
+                  /* no-op */
+                }
               }}
               className="hidden md:inline-flex items-center gap-2 rounded-xl ring-1 ring-white/10 px-3 py-2 hover:bg-white/5"
               aria-label="Copy share link"
@@ -556,7 +659,8 @@ export default function Page() {
           <div className="flex items-center gap-3 rounded-xl bg-amber-500/10 ring-1 ring-amber-400/30 px-3 py-2 text-amber-100">
             <AlertTriangle className="h-5 w-5" />
             <p className="text-sm">
-              <span className="font-semibold">{alerts.length}</span> active alert{alerts.length > 1 ? "s" : ""} near {placeLabel || "your location"}. Check the Alerts tab for details.
+              <span className="font-semibold">{alerts.length}</span> active alert{alerts.length > 1 ? "s" : ""} near{" "}
+              {placeLabel || "your location"}. Check the Alerts tab for details.
             </p>
           </div>
         </div>
@@ -565,6 +669,7 @@ export default function Page() {
       {/* Hero */}
       <section className="mx-auto max-w-6xl px-4 pt-8">
         <div className="relative overflow-hidden rounded-3xl ring-1 ring-white/10 bg-white/5">
+          {/* subtle motion aura */}
           <div className="absolute inset-0 pointer-events-none">
             <motion.div
               className="absolute -top-24 -left-24 h-72 w-72 rounded-full blur-3xl"
@@ -573,62 +678,68 @@ export default function Page() {
               transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
             />
           </div>
+
           <div className="relative grid gap-6 p-6 md:grid-cols-2 md:items-center">
+            {/* Left: current summary */}
             <div>
               <div className="flex items-center gap-2 text-slate-300">
                 <MapPin className="h-4 w-4" />
                 <span className="text-sm">{placeLabel || "Locating..."}</span>
               </div>
+
               {loadingCurrent ? (
-                <div className="mt-3"><Skeleton lines={3} /></div>
+                <div className="mt-3">
+                  <Skeleton lines={3} />
+                </div>
               ) : current ? (
                 <div className="mt-2">
                   <div className="flex items-end gap-4">
-                    <span className="text-6xl md:text-7xl font-bold tracking-tight drop-shadow-sm">{formatTemp(current.temperature, unit)}</span>
-                    <div className="text-slate-300">
+                    <span className="text-6xl md:text-7xl font-bold tracking-tight drop-shadow-sm">
+                      {formatTemp(current.temperature, unit)}
+                    </span>
+                    <div className="text-slate-200">
                       <div className="flex items-center gap-2">
                         {weatherIcon(current.weatherCode)}
                         <span className="text-sm">Feels like {formatTemp(current.apparent, unit)}</span>
                       </div>
                       {today && (
-                        <div className="mt-1 text-sm text-slate-300 flex items-center gap-3">
-                          <span className="inline-flex items-center gap-1"><ArrowUp className="h-4 w-4" /> {formatTemp(today.tmax, unit)}</span>
-                          <span className="inline-flex items-center gap-1"><ArrowDown className="h-4 w-4" /> {formatTemp(today.tmin, unit)}</span>
-                          {typeof nextHour?.precipProb === "number" && (
-                            <span>{nextHour.precipProb}% precip next hr</span>
-                          )}
+                        <div className="mt-1 text-sm text-slate-200/90 flex items-center gap-3">
+                          <span className="inline-flex items-center gap-1">
+                            <ArrowUp className="h-4 w-4" /> {formatTemp(today.tmax, unit)}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <ArrowDown className="h-4 w-4" /> {formatTemp(today.tmin, unit)}
+                          </span>
+                          {typeof nextHour?.precipProb === "number" && <span>{nextHour.precipProb}% precip next hr</span>}
                         </div>
                       )}
                     </div>
                   </div>
+
                   <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <Metric icon={<Thermometer className="h-4 w-4" />} label="Humidity" value={current.humidity != null ? `${Math.round(current.humidity)}%` : "—"} />
-                    <Metric icon={<Droplets className="h-4 w-4" />} label="Precip" value={current.precipitation != null ? `${current.precipitation}` + (unit === "imperial" ? " in" : " mm") : "—"} />
+                    <Metric
+                      icon={<Thermometer className="h-4 w-4" />}
+                      label="Humidity"
+                      value={current.humidity != null ? `${Math.round(current.humidity)}%` : "—"}
+                    />
+                    <Metric
+                      icon={<Droplets className="h-4 w-4" />}
+                      label="Precip"
+                      value={current.precipitation != null ? `${current.precipitation}${unit === "imperial" ? " in" : " mm"}` : "—"}
+                    />
                     <Metric icon={<Wind className="h-4 w-4" />} label="Wind" value={formatWind(current.windSpeed, unit)} />
                     <Metric icon={<Wind className="h-4 w-4" />} label="Gusts" value={formatWind(current.windGust, unit)} />
                   </div>
                 </div>
               ) : (
-                <div className="mt-3"><Empty label="No data" /></div>
-              )}
-            </div>
-
-            {/* Radar preview */}
-            <div>
-              {!coords ? (
-                <Skeleton lines={8} />
-              ) : (
-                <div className="aspect-video w-full overflow-hidden rounded-2xl ring-1 ring-white/10">
-                  <iframe
-                    title="Radar"
-                    className="h-full w-full"
-                    src={windyEmbedUrl(coords, unit)}
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
+                <div className="mt-3">
+                  <Empty label="No data" />
                 </div>
               )}
             </div>
+
+            {/* Right: radar preview big */}
+            <div>{coords ? <MapPanel coords={coords} unit={unit} /> : <Skeleton lines={8} />}</div>
           </div>
         </div>
       </section>
@@ -646,10 +757,7 @@ export default function Page() {
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={clsx(
-              "px-4 py-2 text-sm",
-              tab === t.id ? "bg-sky-600 text-white" : "bg-slate-900/60 hover:bg-white/5"
-            )}
+            className={clsx("px-4 py-2 text-sm", tab === t.id ? "bg-sky-600 text-white" : "bg-slate-900/60 hover:bg-white/5")}
             aria-pressed={tab === t.id}
             aria-controls={`panel-${t.id}`}
           >
@@ -663,7 +771,7 @@ export default function Page() {
         {/* NOW */}
         {tab === "now" && (
           <section id="panel-now" className="mt-6 grid gap-6 md:grid-cols-3">
-            {/* Current card retained for layout balance */}
+            {/* Current card */}
             <Card>
               {loadingCurrent ? (
                 <Skeleton lines={6} />
@@ -675,17 +783,23 @@ export default function Page() {
                   </div>
                   <div className="flex items-end gap-3">
                     <span className="text-5xl font-bold tracking-tight">{formatTemp(current.temperature, unit)}</span>
-                    <span className="text-slate-300">feels like {formatTemp(current.apparent, unit)}</span>
+                    <span className="text-slate-200">feels like {formatTemp(current.apparent, unit)}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-3 pt-2">
-                    <Metric icon={<Thermometer className="h-4 w-4" />} label="Humidity" value={current.humidity != null ? `${Math.round(current.humidity)}%` : "—"} />
-                    <Metric icon={<Droplets className="h-4 w-4" />} label="Precip" value={current.precipitation != null ? `${current.precipitation}` + (unit === "imperial" ? " in" : " mm") : "—"} />
+                    <Metric
+                      icon={<Thermometer className="h-4 w-4" />}
+                      label="Humidity"
+                      value={current.humidity != null ? `${Math.round(current.humidity)}%` : "—"}
+                    />
+                    <Metric
+                      icon={<Droplets className="h-4 w-4" />}
+                      label="Precip"
+                      value={current.precipitation != null ? `${current.precipitation}${unit === "imperial" ? " in" : " mm"}` : "—"}
+                    />
                     <Metric icon={<Wind className="h-4 w-4" />} label="Wind" value={formatWind(current.windSpeed, unit)} />
                     <Metric icon={<Wind className="h-4 w-4" />} label="Gusts" value={formatWind(current.windGust, unit)} />
                   </div>
-                  {error && (
-                    <p className="mt-2 text-sm text-rose-300">{error}</p>
-                  )}
+                  {error && <p className="mt-2 text-sm text-rose-300">{error}</p>}
                 </div>
               ) : (
                 <Empty label="No data" />
@@ -696,14 +810,14 @@ export default function Page() {
             <Card className="md:col-span-2">
               <div className="flex items-center gap-3 mb-2">
                 <Cloud className="h-5 w-5" aria-hidden />
-                <h2 className="text-lg font-semibold">7‑day forecast</h2>
+                <h2 className="text-lg font-semibold">7-day forecast</h2>
               </div>
               {loadingDaily ? (
                 <Skeleton lines={5} />
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
                   {daily.map((d) => (
-                    <div key={d.date} className="rounded-xl bg-white/5 p-3 ring-1 ring-white/10 hover:bg-white/7.5 transition">
+                    <div key={d.date} className="rounded-xl bg-white/5 p-3 ring-1 ring-white/10 hover:bg-white/10 transition">
                       <div className="flex items-center justify-between">
                         <span className="text-slate-200 text-sm">{shortDate(d.date)}</span>
                         {weatherIcon(d.weatherCode)}
@@ -712,7 +826,14 @@ export default function Page() {
                         <span className="text-xl font-semibold">{formatTemp(d.tmax, unit)}</span>
                         <span className="text-slate-300">{formatTemp(d.tmin, unit)}</span>
                       </div>
-                      <div className="text-xs text-slate-300 mt-1">Precip: {d.precipSum != null ? (unit === "imperial" ? `${d.precipSum.toFixed(2)} in` : `${d.precipSum.toFixed(1)} mm`) : "—"}</div>
+                      <div className="text-xs text-slate-300 mt-1">
+                        Precip:{" "}
+                        {d.precipSum != null
+                          ? unit === "imperial"
+                            ? `${d.precipSum.toFixed(2)} in`
+                            : `${d.precipSum.toFixed(1)} mm`
+                          : "—"}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -756,26 +877,14 @@ export default function Page() {
         )}
 
         {/* RADAR */}
-        {tab === "radar" && (
+        {tab === "radar" && coords && (
           <section id="panel-radar" className="mt-6">
             <Card>
               <div className="flex items-center gap-3 mb-2">
                 <CloudRain className="h-5 w-5" aria-hidden />
                 <h2 className="text-lg font-semibold">Live radar (Windy)</h2>
               </div>
-              {!coords ? (
-                <Skeleton lines={8} />
-              ) : (
-                <div className="aspect-video w-full overflow-hidden rounded-2xl ring-1 ring-white/10">
-                  <iframe
-                    title="Radar"
-                    className="h-full w-full"
-                    src={windyEmbedUrl(coords, unit)}
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
-                </div>
-              )}
+              <MapPanel coords={coords} unit={unit} />
             </Card>
           </section>
         )}
@@ -799,27 +908,25 @@ export default function Page() {
                   {alerts.map((a) => (
                     <details key={a.id} className="group rounded-xl bg-white/5 ring-1 ring-white/10">
                       <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
-                        <span className={clsx(
-                          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                          chipColor(a.severity)
-                        )}>
+                        <span
+                          className={clsx(
+                            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                            chipColor(a.severity)
+                          )}
+                        >
                           {a.severity || "Unknown"}
                         </span>
                         <span className="font-medium">{a.event}</span>
-                        <span className="ml-auto text-xs text-slate-300">{a.effective ? new Date(a.effective).toLocaleString() : ""}</span>
+                        <span className="ml-auto text-xs text-slate-300">
+                          {a.effective ? new Date(a.effective).toLocaleString() : ""}
+                        </span>
                       </summary>
                       <div className="px-4 pb-4 text-sm text-slate-100">
                         {a.headline && <p className="mb-2 font-semibold">{a.headline}</p>}
                         {a.areaDesc && <p className="mb-2 text-slate-200">Areas: {a.areaDesc}</p>}
-                        {a.description && (
-                          <p className="whitespace-pre-wrap">{a.description}</p>
-                        )}
-                        {a.instruction && (
-                          <p className="mt-2 whitespace-pre-wrap font-medium">{a.instruction}</p>
-                        )}
-                        {a.ends && (
-                          <p className="mt-2 text-xs text-slate-300">Ends: {new Date(a.ends).toLocaleString()}</p>
-                        )}
+                        {a.description && <p className="whitespace-pre-wrap">{a.description}</p>}
+                        {a.instruction && <p className="mt-2 whitespace-pre-wrap font-medium">{a.instruction}</p>}
+                        {a.ends && <p className="mt-2 text-xs text-slate-300">Ends: {new Date(a.ends).toLocaleString()}</p>}
                       </div>
                     </details>
                   ))}
@@ -831,16 +938,16 @@ export default function Page() {
 
         {/* Footer note */}
         <p className="mt-10 text-center text-xs text-slate-300/80">
-          Data: Open‑Meteo (forecast, geocoding). Alerts: NWS (best‑effort). Built with Next.js & Tailwind.
+          Data: Open-Meteo (forecast, geocoding). Alerts: NWS (best-effort). Built with Next.js & Tailwind.
         </p>
       </main>
     </div>
   );
 }
 
-// -----------------------------
-// Small components
-// -----------------------------
+/* =========================
+   Small components
+   ========================= */
 
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -892,7 +999,10 @@ function chipColor(sev?: string) {
 function ClockIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
-      <path fill="currentColor" d="M12 1.75A10.25 10.25 0 1 0 22.25 12 10.262 10.262 0 0 0 12 1.75Zm.75 5a.75.75 0 0 0-1.5 0v5.19l-3.1 1.79a.75.75 0 1 0 .75 1.3l3.35-1.94A.75.75 0 0 0 12.75 12Z" />
+      <path
+        fill="currentColor"
+        d="M12 1.75A10.25 10.25 0 1 0 22.25 12 10.262 10.262 0 0 0 12 1.75Zm.75 5a.75.75 0 0 0-1.5 0v5.19l-3.1 1.79a.75.75 0 1 0 .75 1.3l3.35-1.94A.75.75 0 0 0 12.75 12Z"
+      />
     </svg>
   );
 }
