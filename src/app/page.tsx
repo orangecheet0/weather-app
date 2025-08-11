@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -429,7 +429,8 @@ export default function Page() {
   const [tab, setTab] = useState<"now" | "hours" | "radar" | "alerts">("now");
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-slate-100">
+    <Suspense fallback={<PageSuspenseFallback /> }>
+      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-slate-100">
       {/* Header */}
       <header className="sticky top-0 z-40 backdrop-blur supports-[backdrop-filter]:bg-slate-900/70 bg-slate-900/60 border-b border-slate-800">
         <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
@@ -687,6 +688,23 @@ export default function Page() {
         <p className="mt-10 text-center text-xs text-slate-500">
           Data: Open‑Meteo (forecast, geocoding). Alerts: NWS (best‑effort). UI built for speed & clarity.
         </p>
+      </main>
+      </div>
+    </Suspense>
+  );
+}
+
+function PageSuspenseFallback() {
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-slate-100">
+      <main className="mx-auto max-w-6xl px-4 py-10">
+        <div className="mb-6">
+          <Skeleton lines={3} />
+        </div>
+        <div className="grid gap-6 md:grid-cols-3">
+          <div className="md:col-span-1"><Skeleton lines={8} /></div>
+          <div className="md:col-span-2"><Skeleton lines={10} /></div>
+        </div>
       </main>
     </div>
   );
