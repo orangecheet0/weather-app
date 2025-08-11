@@ -113,8 +113,9 @@ export default function Home() {
         const alertsData = await alertsRes.json();
         setAlerts(alertsData.alerts || []);
       }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred while fetching weather data');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An error occurred while fetching weather data';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -154,21 +155,25 @@ export default function Home() {
   // Locate once on mount
   useEffect(() => {
     locateMe();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // On unit change, refetch Open-Meteo + city weather (no geolocation prompt)
   useEffect(() => {
     if (coords) fetchOpenMeteo(coords.lat, coords.lon);
     if (city) fetchWeather(city);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unit]);
+  }, [unit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Animations
   const cardVariants = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0, transition: { duration: 0.5 } } };
   const gridContainerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.12 } } };
   const gridItemVariants = {
     hidden: { opacity: 0, y: 18, scale: 0.98 },
-    visible: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 220, damping: 22 } },
+    visible: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { type: 'spring' as const, stiffness: 220, damping: 22 },
+    },
   };
 
   // Format helpers

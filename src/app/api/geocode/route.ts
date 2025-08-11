@@ -65,8 +65,9 @@ export async function GET(request: Request) {
     // Suggestion 3: Log and include error details
     // This helps debug issues by logging the error and sending its message to the client.
     console.error('Geocode fetch error:', error);
+    const details = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { message: 'Failed to fetch geocode data', details: error.message },
+      { message: 'Failed to fetch geocode data', details },
       { status: 500 }
     );
   }
