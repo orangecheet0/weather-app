@@ -1,374 +1,740 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
 import {
-  Cloud, Droplets, Thermometer, Wind, CloudRain, Cloudy,
-  Search, MapPin
-} from 'lucide-react';
+  Cloud,
+  CloudDrizzle,
+  CloudFog,
+  CloudLightning,
+  CloudRain,
+  CloudSnow,
+  Droplets,
+  Loader2,
+  MapPin,
+  Search,
+  Sun,
+  Thermometer,
+  Wind,
+  TriangleAlert,
+} from "lucide-react";
 
+// -----------------------------
 // Types
-interface Weather {
-  name: string;
-  main: { temp: number; humidity: number };
-  weather: { description: string; icon: string; main: string }[];
-  wind: { speed: number };
-  coord: { lat: number; lon: number };
+// -----------------------------
+
+type Unit = "imperial" | "metric";
+
+interface Coords {
+  lat: number;
+  lon: number;
 }
-interface Forecast {
-  list: { dt: number; main: { temp: number }; weather: { description: string; icon: string }[] }[];
+
+interface CurrentBlock {
+  time: string;
+  temperature: number;
+  humidity: number | null;
+  apparent: number | null;
+  precipitation: number | null;
+  windSpeed: number | null;
+  windGust: number | null;
+  weatherCode: number | null;
 }
-interface Alert { event: string; start: number; end: number; description: string; }
-type OpenMeteoCurrent = {
-  temperature_2m: number;
-  windspeed_10m: number;
-  cloudcover: number;
-  precipitation: number;
+
+interface DailyBlock {
+  date: string;
+  tmax: number | null;
+  tmin: number | null;
+  precipSum: number | null;
+  weatherCode: number | null;
+}
+
+interface HourlyPoint {
+  time: string;
+  temperature: number | null;
+  precipProb: number | null;
+  weatherCode: number | null;
+}
+
+interface AlertItem {
+  id: string;
+  event: string;
+  headline?: string;
+  severity?: string;
+  effective?: string;
+  ends?: string;
+  description?: string;
+  instruction?: string;
+  areaDesc?: string;
+}
+
+// -----------------------------
+// Helpers
+// -----------------------------
+
+const DEFAULT_CITY = {
+  name: "Huntsville",
+  admin1: "Alabama",
+  country: "US",
+  lat: 34.7304,
+  lon: -86.5861,
 };
 
-export default function Home() {
-  const [city, setCity] = useState('');
-  const [weather, setWeather] = useState<Weather | null>(null);
-  const [forecast, setForecast] = useState<Forecast | null>(null);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [loading, setLoading] = useState(false);
+function clsx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+function formatTemp(t: number | null | undefined, unit: Unit) {
+  if (t === null || t === undefined || Number.isNaN(t)) return "—";
+  return `${Math.round(t)}°${unit === "imperial" ? "F" : "C"}`;
+}
+
+function formatWind(w: number | null | undefined, unit: Unit) {
+  if (w === null || w === undefined || Number.isNaN(w)) return "—";
+  return `${Math.round(w)} ${unit === "imperial" ? "mph" : "km/h"}`;
+}
+
+function shortDate(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+function shortTime(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString(undefined, { hour: "numeric" });
+}
+
+function titleCase(s: string) {
+  return s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.substring(1).toLowerCase());
+}
+
+function weatherIcon(code: number | null) {
+  // Very compact mapping for demonstration
+  if (code == null) return <Cloud className="h-6 w-6" aria-hidden />;
+  if ([0].includes(code)) return <Sun className="h-6 w-6" aria-hidden />; // Clear
+  if ([1, 2, 3].includes(code)) return <Cloud className="h-6 w-6" aria-hidden />; // Partly/Cloudy
+  if ([45, 48].includes(code)) return <CloudFog className="h-6 w-6" aria-hidden />; // Fog
+  if ([51, 53, 55, 61, 63, 65].includes(code)) return <CloudRain className="h-6 w-6" aria-hidden />; // Rain
+  if ([80, 81, 82].includes(code)) return <CloudDrizzle className="h-6 w-6" aria-hidden />; // Showers
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return <CloudSnow className="h-6 w-6" aria-hidden />; // Snow
+  if ([95, 96, 99].includes(code)) return <CloudLightning className="h-6 w-6" aria-hidden />; // Thunder
+  return <Cloud className="h-6 w-6" aria-hidden />;
+}
+
+function windyEmbedUrl(c: Coords, unit: Unit) {
+  // Uses documented embed params for units
+  const base = "https://embed.windy.com/embed2.html";
+  const params = new URLSearchParams({
+    lat: String(c.lat),
+    lon: String(c.lon),
+    detailLat: String(c.lat),
+    detailLon: String(c.lon),
+    zoom: "7",
+    level: "surface",
+    overlay: "radar",
+    product: "radar",
+    menu: "false",
+    message: "true",
+    marker: "true",
+    calendar: "now",
+    pressure: "true",
+    type: "map",
+    location: "coordinates",
+    detail: "true",
+    metricWind: unit === "imperial" ? "mph" : "kph",
+    metricTemp: unit === "imperial" ? "F" : "C",
+  }).toString();
+  return `${base}?${params}`;
+}
+
+// -----------------------------
+// Main Component
+// -----------------------------
+
+export default function Page() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [unit, setUnit] = useState<Unit>(() => (searchParams.get("u") === "metric" ? "metric" : "imperial"));
+  const [query, setQuery] = useState("");
+  const [activePlace, setActivePlace] = useState<{ name: string; admin1?: string; country?: string } | null>(null);
+  const [coords, setCoords] = useState<Coords | null>(null);
+
+  // Panels state
+  const [loadingCurrent, setLoadingCurrent] = useState(true);
+  const [loadingDaily, setLoadingDaily] = useState(true);
+  const [loadingHourly, setLoadingHourly] = useState(true);
+  const [loadingAlerts, setLoadingAlerts] = useState(false);
+
+  const [current, setCurrent] = useState<CurrentBlock | null>(null);
+  const [daily, setDaily] = useState<DailyBlock[]>([]);
+  const [hourly, setHourly] = useState<HourlyPoint[]>([]);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+
   const [error, setError] = useState<string | null>(null);
+  const [alertError, setAlertError] = useState<string | null>(null);
 
-  // Default to imperial (°F, mph, inches)
-  const [unit, setUnit] = useState<'metric' | 'imperial'>('imperial');
-  const [mapLayer, setMapLayer] = useState<'temperature' | 'precipitation' | 'clouds' | 'wind'>('temperature');
+  // AbortControllers for cancellation
+  const ctrlGeo = useRef<AbortController | null>(null);
+  const ctrlForecast = useRef<AbortController | null>(null);
+  const ctrlAlerts = useRef<AbortController | null>(null);
 
-  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
-  const [openMeteo, setOpenMeteo] = useState<OpenMeteoCurrent | null>(null);
-
-  // UI layer -> Windy overlay keys
-  const layerMap: Record<typeof mapLayer, string> = {
-    temperature: 'temp',
-    precipitation: 'rain',
-    clouds: 'clouds',
-    wind: 'wind',
-  };
-
-  const layers = [
-    { value: 'temperature' as const, label: 'Temperature', icon: Thermometer },
-    { value: 'precipitation' as const, label: 'Precipitation', icon: CloudRain },
-    { value: 'clouds' as const, label: 'Clouds', icon: Cloudy },
-    { value: 'wind' as const, label: 'Wind', icon: Wind },
-  ];
-
-  const getBackgroundClass = (main?: string) => {
-    switch (main?.toLowerCase()) {
-      case 'clear': return 'bg-gradient-to-br from-yellow-500 to-orange-700';
-      case 'clouds': return 'bg-gradient-to-br from-gray-600 to-blue-700';
-      case 'rain':
-      case 'drizzle': return 'bg-gradient-to-br from-blue-800 to-indigo-900';
-      case 'thunderstorm': return 'bg-gradient-to-br from-gray-900 to-purple-900';
-      case 'snow': return 'bg-gradient-to-br from-blue-300 to-white';
-      case 'mist':
-      case 'fog': return 'bg-gradient-to-br from-gray-500 to-gray-700';
-      default: return 'bg-gradient-to-br from-blue-300 to-indigo-700';
-    }
-  };
-
-  const fetchOpenMeteo = async (lat: number, lon: number) => {
-    const tempUnit = unit === 'imperial' ? 'fahrenheit' : 'celsius';
-    const windUnit = unit === 'imperial' ? 'mph' : 'kmh';
-    const precipUnit = unit === 'imperial' ? 'inch' : 'mm';
-
-    const omRes = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-      `&current=temperature_2m,precipitation,cloudcover,windspeed_10m` +
-      `&temperature_unit=${tempUnit}&windspeed_unit=${windUnit}&precipitation_unit=${precipUnit}`
-    );
-    const omData = await omRes.json();
-    setOpenMeteo(omData.current as OpenMeteoCurrent);
-  };
-
-  const fetchWeather = async (cityName: string) => {
-    if (!cityName.trim()) return;
-    setLoading(true);
-    setError(null);
-    setWeather(null);
-    setForecast(null);
-    setAlerts([]);
-    try {
-      const weatherRes = await fetch(`/api/weather?city=${encodeURIComponent(cityName)}&unit=${unit}`);
-      const weatherData: Weather & { message?: string } = await weatherRes.json();
-      if (!weatherRes.ok) throw new Error(weatherData.message || 'City not found');
-      setWeather(weatherData);
-
-      // Use OpenWeather's coords to move the map and refresh Open-Meteo for searched city
-      if (weatherData?.coord?.lat && weatherData?.coord?.lon) {
-        setCoords({ lat: weatherData.coord.lat, lon: weatherData.coord.lon });
-        fetchOpenMeteo(weatherData.coord.lat, weatherData.coord.lon);
+  // -------------
+  // Boot
+  // -------------
+  useEffect(() => {
+    // 1) From URL ?lat=..&lon=..&u=..
+    const latStr = searchParams.get("lat");
+    const lonStr = searchParams.get("lon");
+    if (latStr && lonStr) {
+      const lat = parseFloat(latStr);
+      const lon = parseFloat(lonStr);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        setCoords({ lat, lon });
+        reverseLookup({ lat, lon });
+        return;
       }
-
-      const forecastRes = await fetch(`/api/forecast?city=${encodeURIComponent(cityName)}&unit=${unit}`);
-      const forecastData: Forecast & { message?: string } = await forecastRes.json();
-      if (!forecastRes.ok) throw new Error(forecastData.message || 'Forecast unavailable');
-      setForecast(forecastData);
-
-      const alertsRes = await fetch(`/api/onecall?lat=${weatherData.coord.lat}&lon=${weatherData.coord.lon}&unit=${unit}`);
-      if (alertsRes.ok) {
-        const alertsData = await alertsRes.json();
-        setAlerts(alertsData.alerts || []);
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'An error occurred while fetching weather data';
-      setError(message);
-    } finally {
-      setLoading(false);
     }
-  };
 
-  const locateMe = async () => {
-    try {
-      const pos = await new Promise<GeolocationPosition>((res, rej) =>
-        navigator.geolocation.getCurrentPosition(res, rej, { timeout: 10000 })
+    // 2) Try geolocation
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          setCoords(c);
+          reverseLookup(c);
+        },
+        () => {
+          // 3) Fallback
+          setCoords({ lat: DEFAULT_CITY.lat, lon: DEFAULT_CITY.lon });
+          setActivePlace({ name: DEFAULT_CITY.name, admin1: DEFAULT_CITY.admin1, country: DEFAULT_CITY.country });
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
       );
-      const { latitude, longitude } = pos.coords;
-      const here = { lat: latitude, lon: longitude };
-      setCoords(here);
-
-      // Reverse geocode to city name then fetch weather
-      const geo = await fetch(`/api/geocode?lat=${latitude}&lon=${longitude}`);
-      const geoData = await geo.json();
-      if (geo.ok) {
-        const cityName = geoData.name || 'Unknown City';
-        setCity(cityName);
-        fetchWeather(cityName);
-      } else {
-        throw new Error('Unable to get city name');
-      }
-      await fetchOpenMeteo(latitude, longitude);
-    } catch {
-      // Fallback: Huntsville so the map/cards still render
-      setError('Could not get your location. Showing default weather.');
-      const fallback = { lat: 34.7304, lon: -86.5861 }; // Huntsville, AL
-      setCoords(fallback);
-      setCity('Huntsville');
-      await fetchOpenMeteo(fallback.lat, fallback.lon);
-      fetchWeather('Huntsville');
+    } else {
+      setCoords({ lat: DEFAULT_CITY.lat, lon: DEFAULT_CITY.lon });
+      setActivePlace({ name: DEFAULT_CITY.name, admin1: DEFAULT_CITY.admin1, country: DEFAULT_CITY.country });
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Locate once on mount
+  // -------------
+  // Keep URL shareable
+  // -------------
   useEffect(() => {
-    locateMe();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!coords) return;
+    const usp = new URLSearchParams(window.location.search);
+    usp.set("lat", String(coords.lat.toFixed(4)));
+    usp.set("lon", String(coords.lon.toFixed(4)));
+    usp.set("u", unit);
+    router.replace(`?${usp.toString()}`);
+  }, [coords, unit, router]);
 
-  // On unit change, refetch Open-Meteo + city weather (no geolocation prompt)
+  // -------------
+  // Forecast fetching (re-runs on unit or coords change)
+  // -------------
   useEffect(() => {
-    if (coords) fetchOpenMeteo(coords.lat, coords.lon);
-    if (city) fetchWeather(city);
-  }, [unit]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!coords) return;
+    fetchForecast(coords, unit);
+  }, [coords, unit]);
 
-  // Animations
-  const cardVariants = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0, transition: { duration: 0.5 } } };
-  const gridContainerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.12 } } };
-  const gridItemVariants = {
-    hidden: { opacity: 0, y: 18, scale: 0.98 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      scale: 1,
-      transition: { type: 'spring' as const, stiffness: 220, damping: 22 },
-    },
-  };
+  // -------------
+  // Alerts (best effort; CORS may block in some regions)
+  // -------------
+  useEffect(() => {
+    if (!coords) return;
+    fetchAlerts(coords);
+  }, [coords]);
 
-  // Format helpers
-  const formatPrecip = (val: number | undefined | null) => {
-    if (val == null || Number.isNaN(val)) return unit === 'imperial' ? '0.00 in' : '0.0 mm';
-    return unit === 'imperial' ? `${val.toFixed(2)} in` : `${val.toFixed(1)} mm`;
-  };
+  // -----------------------------
+  // API calls
+  // -----------------------------
+
+  async function reverseLookup(c: Coords) {
+    try {
+      ctrlGeo.current?.abort();
+      ctrlGeo.current = new AbortController();
+      const url = `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${c.lat}&longitude=${c.lon}&language=en&format=json`;
+      const res = await fetch(url, { signal: ctrlGeo.current.signal });
+      const data = await res.json();
+      const first = data?.results?.[0];
+      if (first) setActivePlace({ name: first.name, admin1: first.admin1, country: first.country_code });
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  async function runSearch() {
+    const q = query.trim();
+    if (!q) return;
+    try {
+      setError(null);
+      ctrlGeo.current?.abort();
+      ctrlGeo.current = new AbortController();
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=en&format=json`;
+      const res = await fetch(url, { signal: ctrlGeo.current.signal });
+      if (!res.ok) throw new Error("Search failed");
+      const data = await res.json();
+      const first = data?.results?.[0];
+      if (!first) {
+        setError("No matches. Try a city + state, like \"Huntsville, AL\".");
+        return;
+      }
+      setActivePlace({ name: first.name, admin1: first.admin1, country: first.country_code });
+      setCoords({ lat: first.latitude, lon: first.longitude });
+    } catch (e: any) {
+      setError(e?.message || "Search error");
+    }
+  }
+
+  async function fetchForecast(c: Coords, unit: Unit) {
+    try {
+      setLoadingCurrent(true);
+      setLoadingDaily(true);
+      setLoadingHourly(true);
+      setError(null);
+
+      ctrlForecast.current?.abort();
+      ctrlForecast.current = new AbortController();
+
+      const temperature_unit = unit === "imperial" ? "fahrenheit" : "celsius";
+      const wind_speed_unit = unit === "imperial" ? "mph" : "kmh";
+      const precipitation_unit = unit === "imperial" ? "inch" : "mm";
+
+      const url = new URL("https://api.open-meteo.com/v1/forecast");
+      url.search = new URLSearchParams({
+        latitude: String(c.lat),
+        longitude: String(c.lon),
+        timezone: "auto",
+        current: [
+          "temperature_2m",
+          "relative_humidity_2m",
+          "apparent_temperature",
+          "precipitation",
+          "wind_speed_10m",
+          "wind_gusts_10m",
+          "weather_code",
+        ].join(","),
+        hourly: ["temperature_2m", "precipitation_probability", "weather_code"].join(","),
+        daily: ["temperature_2m_max", "temperature_2m_min", "precipitation_sum", "weather_code"].join(","),
+        forecast_days: "7",
+        temperature_unit,
+        wind_speed_unit,
+        precipitation_unit,
+      }).toString();
+
+      const res = await fetch(url.toString(), { signal: ctrlForecast.current.signal });
+      if (!res.ok) throw new Error("Forecast failed");
+      const data = await res.json();
+
+      // Current
+      setCurrent({
+        time: data?.current?.time,
+        temperature: data?.current?.temperature_2m ?? null,
+        humidity: data?.current?.relative_humidity_2m ?? null,
+        apparent: data?.current?.apparent_temperature ?? null,
+        precipitation: data?.current?.precipitation ?? null,
+        windSpeed: data?.current?.wind_speed_10m ?? null,
+        windGust: data?.current?.wind_gusts_10m ?? null,
+        weatherCode: data?.current?.weather_code ?? null,
+      });
+      setLoadingCurrent(false);
+
+      // Daily
+      const d: DailyBlock[] = (data?.daily?.time || []).map((t: string, i: number) => ({
+        date: t,
+        tmax: data?.daily?.temperature_2m_max?.[i] ?? null,
+        tmin: data?.daily?.temperature_2m_min?.[i] ?? null,
+        precipSum: data?.daily?.precipitation_sum?.[i] ?? null,
+        weatherCode: data?.daily?.weather_code?.[i] ?? null,
+      }));
+      setDaily(d);
+      setLoadingDaily(false);
+
+      // Hourly (next 48 hours)
+      const hours: HourlyPoint[] = (data?.hourly?.time || [])
+        .map((t: string, i: number) => ({
+          time: t,
+          temperature: data?.hourly?.temperature_2m?.[i] ?? null,
+          precipProb: data?.hourly?.precipitation_probability?.[i] ?? null,
+          weatherCode: data?.hourly?.weather_code?.[i] ?? null,
+        }))
+        .slice(0, 48);
+      setHourly(hours);
+      setLoadingHourly(false);
+    } catch (e: any) {
+      setError(e?.message || "Unable to load forecast");
+      setLoadingCurrent(false);
+      setLoadingDaily(false);
+      setLoadingHourly(false);
+    }
+  }
+
+  async function fetchAlerts(c: Coords) {
+    try {
+      setLoadingAlerts(true);
+      setAlertError(null);
+      ctrlAlerts.current?.abort();
+      ctrlAlerts.current = new AbortController();
+      const url = `https://api.weather.gov/alerts/active?point=${c.lat},${c.lon}`;
+      const res = await fetch(url, {
+        // Note: browsers can't set a custom User-Agent; NWS works without it for most requests.
+        headers: { Accept: "application/geo+json" },
+        signal: ctrlAlerts.current.signal,
+      });
+      if (!res.ok) throw new Error("Alerts unavailable");
+      const data = await res.json();
+      const items: AlertItem[] = (data?.features || []).map((f: any) => ({
+        id: f?.id || f?.properties?.id || crypto.randomUUID(),
+        event: f?.properties?.event,
+        headline: f?.properties?.headline,
+        severity: f?.properties?.severity,
+        effective: f?.properties?.effective,
+        ends: f?.properties?.ends,
+        description: f?.properties?.description,
+        instruction: f?.properties?.instruction,
+        areaDesc: f?.properties?.areaDesc,
+      }));
+      setAlerts(items);
+      setLoadingAlerts(false);
+    } catch (e: any) {
+      setAlertError("Weather alerts are currently unavailable. Try again later.");
+      setLoadingAlerts(false);
+    }
+  }
+
+  // -----------------------------
+  // UI bits
+  // -----------------------------
+
+  const placeLabel = useMemo(() => {
+    if (!activePlace) return "";
+    const parts = [activePlace.name, activePlace.admin1, activePlace.country].filter(Boolean);
+    return parts.join(", ");
+  }, [activePlace]);
+
+  const [tab, setTab] = useState<"now" | "hours" | "radar" | "alerts">("now");
 
   return (
-    <div className={`min-h-screen p-4 ${getBackgroundClass(weather?.weather[0]?.main)} transition-colors duration-500`}>
-      <motion.div
-        className="mx-auto max-w-4xl bg-white/70 backdrop-blur-xl rounded-2xl p-6 shadow-2xl"
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.8 }}
-      >
-        {/* Header */}
-        <h1 className="text-4xl font-bold text-gray-900 mb-6 drop-shadow-lg">ALWeather</h1>
-
-        {/* Glassy Toolbar */}
-        <div className="mb-6">
-          <div className="w-full rounded-xl bg-white/45 backdrop-blur-xl ring-1 ring-black/5 shadow-lg p-2 flex flex-wrap gap-2 items-center">
-            {/* Location */}
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-slate-100">
+      {/* Header */}
+      <header className="sticky top-0 z-40 backdrop-blur supports-[backdrop-filter]:bg-slate-900/70 bg-slate-900/60 border-b border-slate-800">
+        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
+          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-2">
+            <Sun className="h-6 w-6" aria-hidden />
+            <span className="font-semibold tracking-wide">AlWeather</span>
+          </motion.div>
+          <div className="ml-auto flex items-center gap-2 w-full max-w-xl">
+            <label htmlFor="city" className="sr-only">Search city</label>
+            <input
+              id="city"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              placeholder="Search city (e.g., Huntsville, AL)"
+              className="w-full rounded-xl bg-slate-800/70 ring-1 ring-slate-700 px-3 py-2 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
             <button
-              onClick={locateMe}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/60 hover:bg-white/80 transition shadow"
-              title="Use my location"
+              onClick={runSearch}
+              aria-label="Search"
+              className="inline-flex items-center justify-center rounded-xl ring-1 ring-slate-700 px-3 py-2 hover:bg-slate-800/80"
             >
-              <MapPin size={18} />
-              <span className="hidden sm:inline">My Location</span>
+              <Search className="h-5 w-5" aria-hidden />
             </button>
-
-            {/* Search input */}
-            <div className="relative flex-1 min-w-[180px]">
-              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 opacity-70" />
-              <input
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="Search city (e.g., Huntsville)"
-                className="w-full pl-10 pr-3 py-2 rounded-lg bg-white/60 focus:bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-600 transition shadow"
-              />
-            </div>
-
-            {/* Search button */}
-            <button
-              onClick={() => fetchWeather(city)}
-              disabled={loading || !city.trim()}
-              className="px-4 py-2 rounded-lg bg-blue-700 text-white font-medium shadow hover:bg-blue-800 disabled:bg-gray-400 transition"
-            >
-              {loading ? 'Loading…' : 'Search'}
-            </button>
-
-            {/* Unit toggle */}
-            <div className="flex rounded-lg overflow-hidden shadow">
+            <div role="group" aria-label="Unit" className="hidden sm:flex rounded-xl overflow-hidden ring-1 ring-slate-700">
               <button
-                onClick={() => setUnit('imperial')}
-                className={`px-4 py-2 font-medium flex items-center gap-2 ${unit === 'imperial' ? 'bg-blue-600 text-white' : 'bg-white/60 hover:bg-white/80'}`}
-                aria-pressed={unit === 'imperial'}
+                onClick={() => setUnit("imperial")}
+                className={clsx(
+                  "px-3 py-2 text-sm",
+                  unit === "imperial" ? "bg-sky-600 text-white" : "bg-slate-800/60 hover:bg-slate-800"
+                )}
+                aria-pressed={unit === "imperial"}
               >
-                <Thermometer size={16} /> °F
+                °F / mph
               </button>
               <button
-                onClick={() => setUnit('metric')}
-                className={`px-4 py-2 font-medium flex items-center gap-2 ${unit === 'metric' ? 'bg-blue-600 text-white' : 'bg-white/60 hover:bg-white/80'}`}
-                aria-pressed={unit === 'metric'}
+                onClick={() => setUnit("metric")}
+                className={clsx(
+                  "px-3 py-2 text-sm",
+                  unit === "metric" ? "bg-sky-600 text-white" : "bg-slate-800/60 hover:bg-slate-800"
+                )}
+                aria-pressed={unit === "metric"}
               >
-                <Thermometer size={16} /> °C
+                °C / km/h
               </button>
             </div>
           </div>
         </div>
+      </header>
 
-        {/* Errors */}
-        {error && (
-          <motion.div className="bg-red-300 text-gray-900 p-4 rounded-lg mb-6 shadow-lg" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            {error}
-          </motion.div>
-        )}
+      {/* Main */}
+      <main id="content" className="mx-auto max-w-6xl px-4 pb-16">
+        {/* Location crumb */}
+        <div className="flex items-center gap-2 pt-6 text-slate-300">
+          <MapPin className="h-4 w-4" aria-hidden />
+          <span className="text-sm">{placeLabel || "Locating..."}</span>
+        </div>
 
-        {/* Alerts */}
-        {alerts.length > 0 &&
-          alerts.map((alert, i) => (
-            <motion.div key={i} className="bg-yellow-300 p-4 rounded-lg mb-6 shadow-lg" variants={cardVariants} initial="hidden" animate="visible">
-              <h3 className="font-semibold">{alert.event}</h3>
-              <p>{alert.description}</p>
-              <p className="text-sm">
-                From: {new Date(alert.start * 1000).toLocaleString()} — To: {new Date(alert.end * 1000).toLocaleString()}
-              </p>
-            </motion.div>
+        {/* Tabs */}
+        <div className="mt-4 inline-flex rounded-2xl ring-1 ring-slate-800 overflow-hidden">
+          {(
+            [
+              { id: "now", label: "Now" },
+              { id: "hours", label: "Next 48h" },
+              { id: "radar", label: "Radar" },
+              { id: "alerts", label: "Alerts" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={clsx(
+                "px-4 py-2 text-sm",
+                tab === t.id ? "bg-sky-600 text-white" : "bg-slate-900 hover:bg-slate-800"
+              )}
+              aria-pressed={tab === t.id}
+              aria-controls={`panel-${t.id}`}
+            >
+              {t.label}
+            </button>
           ))}
+        </div>
 
-        {/* Current Weather */}
-        {weather && (
-          <motion.div className="bg-white/70 p-6 rounded-xl shadow-lg mb-6" variants={cardVariants} initial="hidden" animate="visible">
-            <h2 className="text-2xl font-semibold text-gray-900">{weather.name}</h2>
-            <p className="text-lg capitalize text-gray-900">{weather.weather[0].description}</p>
-            <p className="text-4xl text-gray-900">
-              {Math.round(weather.main.temp)}°{unit === 'imperial' ? 'F' : 'C'}
-            </p>
-            <div className="grid grid-cols-2 gap-4 mt-4 text-gray-900">
-              <p>Humidity: {weather.main.humidity}%</p>
-              <p>Wind: {weather.wind.speed} {unit === 'imperial' ? 'mph' : 'm/s'}</p>
-            </div>
-          </motion.div>
+        {/* Panels */}
+        {/* NOW */}
+        {tab === "now" && (
+          <section id="panel-now" className="mt-6 grid gap-6 md:grid-cols-3">
+            {/* Current big card */}
+            <Card>
+              {loadingCurrent ? (
+                <Skeleton lines={6} />
+              ) : current ? (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    {weatherIcon(current.weatherCode)}
+                    <h2 className="text-lg font-semibold">Current conditions</h2>
+                  </div>
+                  <div className="flex items-end gap-3">
+                    <span className="text-5xl font-bold tracking-tight">{formatTemp(current.temperature, unit)}</span>
+                    <span className="text-slate-400">feels like {formatTemp(current.apparent, unit)}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <Metric icon={<Thermometer className="h-4 w-4" />} label="Humidity" value={current.humidity != null ? `${Math.round(current.humidity)}%` : "—"} />
+                    <Metric icon={<Droplets className="h-4 w-4" />} label="Precip" value={current.precipitation != null ? `${current.precipitation}` + (unit === "imperial" ? " in" : " mm") : "—"} />
+                    <Metric icon={<Wind className="h-4 w-4" />} label="Wind" value={formatWind(current.windSpeed, unit)} />
+                    <Metric icon={<Wind className="h-4 w-4" />} label="Gusts" value={formatWind(current.windGust, unit)} />
+                  </div>
+                  {error && (
+                    <p className="mt-2 text-sm text-rose-300">{error}</p>
+                  )}
+                </div>
+              ) : (
+                <Empty label="No data" />
+              )}
+            </Card>
+
+            {/* 7-day forecast */}
+            <Card className="md:col-span-2">
+              <div className="flex items-center gap-3 mb-2">
+                <Cloud className="h-5 w-5" aria-hidden />
+                <h2 className="text-lg font-semibold">7‑day forecast</h2>
+              </div>
+              {loadingDaily ? (
+                <Skeleton lines={5} />
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+                  {daily.map((d) => (
+                    <div key={d.date} className="rounded-xl bg-slate-800/40 p-3 ring-1 ring-slate-800">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-300 text-sm">{shortDate(d.date)}</span>
+                        {weatherIcon(d.weatherCode)}
+                      </div>
+                      <div className="mt-2 flex items-end gap-2">
+                        <span className="text-xl font-semibold">{formatTemp(d.tmax, unit)}</span>
+                        <span className="text-slate-400">{formatTemp(d.tmin, unit)}</span>
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1">Precip: {d.precipSum != null ? (unit === "imperial" ? `${d.precipSum.toFixed(2)} in` : `${d.precipSum.toFixed(1)} mm`) : "—"}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </section>
         )}
 
-        {/* Forecast */}
-        {forecast && (
-          <motion.div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-            {forecast.list.slice(0, 5).map((item, i) => (
-              <motion.div key={i} className="bg-white/70 p-4 rounded-lg shadow-lg" variants={cardVariants} initial="hidden" animate="visible">
-                <p className="font-medium">{new Date(item.dt * 1000).toLocaleDateString()}</p>
-                <p>{Math.round(item.main.temp)}°{unit === 'imperial' ? 'F' : 'C'}</p>
-                <p className="capitalize">{item.weather[0].description}</p>
-              </motion.div>
-            ))}
-          </motion.div>
+        {/* HOURS */}
+        {tab === "hours" && (
+          <section id="panel-hours" className="mt-6">
+            <Card>
+              <div className="flex items-center gap-3 mb-2">
+                <ClockIcon />
+                <h2 className="text-lg font-semibold">Next 48 hours</h2>
+              </div>
+              {loadingHourly ? (
+                <Skeleton lines={10} />
+              ) : (
+                <ul className="divide-y divide-slate-800">
+                  {hourly.map((h) => (
+                    <li key={h.time} className="flex items-center gap-4 py-2">
+                      <span className="w-24 text-sm text-slate-300">{shortTime(h.time)}</span>
+                      <span className="w-24">{formatTemp(h.temperature, unit)}</span>
+                      <span className="w-24 text-sm text-slate-400">{h.precipProb != null ? `${h.precipProb}%` : "—"} precip</span>
+                      <span className="flex-1" aria-hidden>
+                        <div className="h-1 rounded bg-slate-800">
+                          <div
+                            className="h-1 rounded bg-sky-500"
+                            style={{ width: `${Math.min(100, Math.max(0, h.precipProb ?? 0))}%` }}
+                          />
+                        </div>
+                      </span>
+                      <span className="ml-auto">{weatherIcon(h.weatherCode)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </section>
         )}
 
-        {/* Windy Map + Controls + Animated Open-Meteo Cards */}
-        {coords && (
-          <motion.div className="bg-white/70 p-6 rounded-xl shadow-lg mb-20" variants={cardVariants} initial="hidden" animate="visible">
-            <h3 className="mb-4 font-medium text-xl">Live Weather Map</h3>
-
-            {/* Segmented Layer Selector */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {layers.map((layer) => {
-                const Icon = layer.icon;
-                const active = mapLayer === layer.value;
-                return (
-                  <motion.button
-                    key={layer.value}
-                    onClick={() => setMapLayer(layer.value)}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.96 }}
-                    aria-pressed={active}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium shadow-sm transition ${
-                      active ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-                    }`}
-                  >
-                    <Icon size={18} />
-                    {layer.label}
-                  </motion.button>
-                );
-              })}
-            </div>
-
-            {/* Windy Map (fade on layer/unit change) */}
-            <motion.iframe
-              key={`${layerMap[mapLayer]}-${unit}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.45 }}
-              src={`https://embed.windy.com/embed2.html?lat=${coords.lat}&lon=${coords.lon}&zoom=6&level=surface&overlay=${layerMap[mapLayer]}&marker=true&detail=true&detailLat=${coords.lat}&detailLon=${coords.lon}&metricWind=${unit === 'imperial' ? 'mph' : 'km%2Fh'}&metricTemp=${unit === 'imperial' ? '%F' : '%C'}`}
-              width="100%"
-              height="400"
-              className="rounded-lg border-none mb-6"
-              title="Windy Map"
-            />
-
-            {/* Animated metric cards */}
-            {openMeteo && (
-              <motion.div
-                key={`metrics-${unit}`}
-                variants={gridContainerVariants}
-                initial="hidden"
-                animate="visible"
-                className="grid grid-cols-2 sm:grid-cols-4 gap-4"
-              >
-                <motion.div variants={gridItemVariants} className="bg-blue-100 p-4 rounded-lg flex flex-col items-center shadow">
-                  <Thermometer className="text-blue-800 mb-2" size={32} />
-                  <p className="text-lg font-semibold">{openMeteo.temperature_2m}°{unit === 'imperial' ? 'F' : 'C'}</p>
-                  <span className="text-sm text-gray-700">Temperature</span>
-                </motion.div>
-
-                <motion.div variants={gridItemVariants} className="bg-yellow-100 p-4 rounded-lg flex flex-col items-center shadow">
-                  <Wind className="text-yellow-700 mb-2" size={32} />
-                  <p className="text-lg font-semibold">{openMeteo.windspeed_10m} {unit === 'imperial' ? 'mph' : 'km/h'}</p>
-                  <span className="text-sm text-gray-700">Wind Speed</span>
-                </motion.div>
-
-                <motion.div variants={gridItemVariants} className="bg-gray-100 p-4 rounded-lg flex flex-col items-center shadow">
-                  <Cloud className="text-gray-600 mb-2" size={32} />
-                  <p className="text-lg font-semibold">{openMeteo.cloudcover}%</p>
-                  <span className="text-sm text-gray-700">Cloud Cover</span>
-                </motion.div>
-
-                <motion.div variants={gridItemVariants} className="bg-indigo-100 p-4 rounded-lg flex flex-col items-center shadow">
-                  <Droplets className="text-indigo-700 mb-2" size={32} />
-                  <p className="text-lg font-semibold">{formatPrecip(openMeteo.precipitation)}</p>
-                  <span className="text-sm text-gray-700">Precipitation</span>
-                </motion.div>
-              </motion.div>
-            )}
-          </motion.div>
+        {/* RADAR */}
+        {tab === "radar" && (
+          <section id="panel-radar" className="mt-6">
+            <Card>
+              <div className="flex items-center gap-3 mb-2">
+                <CloudRain className="h-5 w-5" aria-hidden />
+                <h2 className="text-lg font-semibold">Live radar (Windy)</h2>
+              </div>
+              {!coords ? (
+                <Skeleton lines={8} />
+              ) : (
+                <div className="aspect-video w-full overflow-hidden rounded-xl ring-1 ring-slate-800">
+                  <iframe
+                    title="Radar"
+                    className="h-full w-full"
+                    src={windyEmbedUrl(coords, unit)}
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
+                </div>
+              )}
+            </Card>
+          </section>
         )}
-      </motion.div>
+
+        {/* ALERTS */}
+        {tab === "alerts" && (
+          <section id="panel-alerts" className="mt-6">
+            <Card>
+              <div className="flex items-center gap-3 mb-2">
+                <TriangleAlert className="h-5 w-5 text-amber-400" aria-hidden />
+                <h2 className="text-lg font-semibold">Active alerts</h2>
+              </div>
+              {loadingAlerts ? (
+                <Skeleton lines={6} />
+              ) : alertError ? (
+                <p className="text-sm text-rose-300">{alertError}</p>
+              ) : alerts.length === 0 ? (
+                <p className="text-sm text-slate-300">No active alerts for this location.</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {alerts.map((a) => (
+                    <details key={a.id} className="group rounded-xl bg-slate-800/40 ring-1 ring-slate-800">
+                      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
+                        <span className={clsx(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                          chipColor(a.severity)
+                        )}>
+                          {a.severity || "Unknown"}
+                        </span>
+                        <span className="font-medium">{a.event}</span>
+                        <span className="ml-auto text-xs text-slate-400">{a.effective ? new Date(a.effective).toLocaleString() : ""}</span>
+                      </summary>
+                      <div className="px-4 pb-4 text-sm text-slate-200">
+                        {a.headline && <p className="mb-2 font-semibold">{a.headline}</p>}
+                        {a.areaDesc && <p className="mb-2 text-slate-300">Areas: {a.areaDesc}</p>}
+                        {a.description && (
+                          <p className="whitespace-pre-wrap text-slate-200">{a.description}</p>
+                        )}
+                        {a.instruction && (
+                          <p className="mt-2 whitespace-pre-wrap font-medium">{a.instruction}</p>
+                        )}
+                        {a.ends && (
+                          <p className="mt-2 text-xs text-slate-400">Ends: {new Date(a.ends).toLocaleString()}</p>
+                        )}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </section>
+        )}
+
+        {/* Footer note */}
+        <p className="mt-10 text-center text-xs text-slate-500">
+          Data: Open‑Meteo (forecast, geocoding). Alerts: NWS (best‑effort). UI built for speed & clarity.
+        </p>
+      </main>
     </div>
+  );
+}
+
+// -----------------------------
+// Small components
+// -----------------------------
+
+function Card({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={clsx("rounded-2xl bg-slate-900/70 p-4 ring-1 ring-slate-800 shadow-xl shadow-slate-950/30", className)}>
+      {children}
+    </div>
+  );
+}
+
+function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl bg-slate-800/40 px-3 py-2 ring-1 ring-slate-800">
+      {icon}
+      <div>
+        <div className="text-xs text-slate-400">{label}</div>
+        <div className="text-sm font-medium">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function Skeleton({ lines = 4 }: { lines?: number }) {
+  return (
+    <div className="animate-pulse">
+      {Array.from({ length: lines }).map((_, i) => (
+        <div key={i} className="h-4 w-full rounded bg-slate-800/60 mb-2" />
+      ))}
+    </div>
+  );
+}
+
+function Empty({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 text-slate-300">
+      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+      <span className="text-sm">{label}</span>
+    </div>
+  );
+}
+
+function chipColor(sev?: string) {
+  const s = (sev || "").toLowerCase();
+  if (s.includes("extreme") || s.includes("severe")) return "bg-rose-500/20 text-rose-200 ring-1 ring-rose-500/30";
+  if (s.includes("moderate")) return "bg-amber-500/20 text-amber-200 ring-1 ring-amber-500/30";
+  if (s.includes("minor")) return "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-500/30";
+  return "bg-slate-700/30 text-slate-200 ring-1 ring-slate-600/40";
+}
+
+function ClockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
+      <path fill="currentColor" d="M12 1.75A10.25 10.25 0 1 0 22.25 12 10.262 10.262 0 0 0 12 1.75Zm.75 5a.75.75 0 0 0-1.5 0v5.19l-3.1 1.79a.75.75 0 1 0 .75 1.3l3.35-1.94A.75.75 0 0 0 12.75 12Z" />
+    </svg>
   );
 }
