@@ -105,9 +105,6 @@ function shortTime(iso: string) {
   return d.toLocaleTimeString(undefined, { hour: "numeric" });
 }
 
-function titleCase(s: string) {
-  return s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.substring(1).toLowerCase());
-}
 
 function weatherIcon(code: number | null) {
   // Very compact mapping for demonstration
@@ -260,9 +257,7 @@ export default function Page() {
       const data = await res.json();
       const first = data?.results?.[0];
       if (first) setActivePlace({ name: first.name, admin1: first.admin1, country: first.country_code });
-    } catch (_) {
-      // ignore
-    }
+    } catch { /* ignore */ }
   }
 
   async function runSearch() {
@@ -283,8 +278,9 @@ export default function Page() {
       }
       setActivePlace({ name: first.name, admin1: first.admin1, country: first.country_code });
       setCoords({ lat: first.latitude, lon: first.longitude });
-    } catch (e: any) {
-      setError(e?.message || "Search error");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Search error";
+      setError(message);
     }
   }
 
@@ -363,8 +359,9 @@ export default function Page() {
         .slice(0, 48);
       setHourly(hours);
       setLoadingHourly(false);
-    } catch (e: any) {
-      setError(e?.message || "Unable to load forecast");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unable to load forecast";
+      setError(message);
       setLoadingCurrent(false);
       setLoadingDaily(false);
       setLoadingHourly(false);
@@ -385,7 +382,8 @@ export default function Page() {
       });
       if (!res.ok) throw new Error("Alerts unavailable");
       const data = await res.json();
-      const items: AlertItem[] = (data?.features || []).map((f: any) => ({
+      type NWSFeature = { id?: string; properties?: { event?: string; headline?: string; severity?: string; effective?: string; ends?: string; description?: string; instruction?: string; areaDesc?: string; }; };
+      const items: AlertItem[] = (Array.isArray(data?.features) ? data.features : []).map((f: NWSFeature) => ({
         id: f?.id || f?.properties?.id || crypto.randomUUID(),
         event: f?.properties?.event,
         headline: f?.properties?.headline,
@@ -398,7 +396,7 @@ export default function Page() {
       }));
       setAlerts(items);
       setLoadingAlerts(false);
-    } catch (e: any) {
+    } catch {
       setAlertError("Weather alerts are currently unavailable. Try again later.");
       setLoadingAlerts(false);
     }
