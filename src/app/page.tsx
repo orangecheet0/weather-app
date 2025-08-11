@@ -197,6 +197,9 @@ export default function Page() {
   const [alertError, setAlertError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Tabs
+  const [tab, setTab] = useState<"now" | "hours" | "radar" | "alerts">("now");
+
   // AbortControllers for cancellation
   const ctrlGeo = useRef<AbortController | null>(null);
   const ctrlForecast = useRef<AbortController | null>(null);
