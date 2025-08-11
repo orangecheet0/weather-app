@@ -17,7 +17,7 @@ import {
   Sun,
   Thermometer,
   Wind,
-  TriangleAlert,
+  AlertTriangle,
 } from "lucide-react";
 
 // -----------------------------
@@ -105,9 +105,8 @@ function shortTime(iso: string) {
   return d.toLocaleTimeString(undefined, { hour: "numeric" });
 }
 
-
 function weatherIcon(code: number | null) {
-  // Very compact mapping for demonstration
+  // Compact mapping for Open‑Meteo weather codes
   if (code == null) return <Cloud className="h-6 w-6" aria-hidden />;
   if ([0].includes(code)) return <Sun className="h-6 w-6" aria-hidden />; // Clear
   if ([1, 2, 3].includes(code)) return <Cloud className="h-6 w-6" aria-hidden />; // Partly/Cloudy
@@ -120,7 +119,7 @@ function weatherIcon(code: number | null) {
 }
 
 function windyEmbedUrl(c: Coords, unit: Unit) {
-  // Uses documented embed params for units
+  // Uses documented Windy embed params for units
   const base = "https://embed.windy.com/embed2.html";
   const params = new URLSearchParams({
     lat: String(c.lat),
@@ -213,7 +212,7 @@ export default function Page() {
       setCoords({ lat: DEFAULT_CITY.lat, lon: DEFAULT_CITY.lon });
       setActivePlace({ name: DEFAULT_CITY.name, admin1: DEFAULT_CITY.admin1, country: DEFAULT_CITY.country });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // -------------
@@ -257,7 +256,9 @@ export default function Page() {
       const data = await res.json();
       const first = data?.results?.[0];
       if (first) setActivePlace({ name: first.name, admin1: first.admin1, country: first.country_code });
-    } catch { /* ignore */ }
+    } catch {
+      // ignore
+    }
   }
 
   async function runSearch() {
@@ -376,16 +377,29 @@ export default function Page() {
       ctrlAlerts.current = new AbortController();
       const url = `https://api.weather.gov/alerts/active?point=${c.lat},${c.lon}`;
       const res = await fetch(url, {
-        // Note: browsers can't set a custom User-Agent; NWS works without it for most requests.
         headers: { Accept: "application/geo+json" },
         signal: ctrlAlerts.current.signal,
       });
       if (!res.ok) throw new Error("Alerts unavailable");
       const data = await res.json();
-      type NWSFeature = { id?: string; properties?: { event?: string; headline?: string; severity?: string; effective?: string; ends?: string; description?: string; instruction?: string; areaDesc?: string; }; };
+
+      type NWSFeature = {
+        id?: string;
+        properties?: {
+          event?: string;
+          headline?: string;
+          severity?: string;
+          effective?: string;
+          ends?: string;
+          description?: string;
+          instruction?: string;
+          areaDesc?: string;
+        };
+      };
+
       const items: AlertItem[] = (Array.isArray(data?.features) ? data.features : []).map((f: NWSFeature) => ({
-        id: f?.id || f?.properties?.id || crypto.randomUUID(),
-        event: f?.properties?.event,
+        id: f?.id || crypto.randomUUID(),
+        event: f?.properties?.event ?? "Alert",
         headline: f?.properties?.headline,
         severity: f?.properties?.severity,
         effective: f?.properties?.effective,
@@ -625,7 +639,7 @@ export default function Page() {
           <section id="panel-alerts" className="mt-6">
             <Card>
               <div className="flex items-center gap-3 mb-2">
-                <TriangleAlert className="h-5 w-5 text-amber-400" aria-hidden />
+                <AlertTriangle className="h-5 w-5 text-amber-400" aria-hidden />
                 <h2 className="text-lg font-semibold">Active alerts</h2>
               </div>
               {loadingAlerts ? (
