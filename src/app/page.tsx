@@ -158,7 +158,7 @@ function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
     // UI toggles (empty string == off/hidden)
     menu: "",
     message: "",
-    marker: "",
+    marker: "true",  // Changed to "true" to show marker explicitly
     pressure: "",
     detail: "",
 
@@ -533,7 +533,7 @@ export default function Page() {
 
   // IP-based geolocation fallback (BigDataCloud, no key)
   async function ipGeoGuess(): Promise<boolean> {
-    console.log('Using IP fallback'); // Added for debugging
+    console.log('Using IP fallback');
     try {
       const res = await fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=en");
       if (!res.ok) return false;
@@ -549,50 +549,41 @@ export default function Page() {
 
       const lat = Number(j.latitude);
       const lon = Number(j.longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-        // Chain to Nominatim fallback if BigDataCloud fails
-        return await nominatimFallback();
-      }
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
 
-      setCoords({ lat, lon });
+      const c = { lat, lon };
+      setCoords(c);
       setActivePlace({
         name: j.city || j.locality || "Your area",
         admin1: j.principalSubdivision || undefined,
         country: j.countryCode || j.countryName || undefined,
       });
       setGeoNotice("Using approximate location based on your IP (may be off by ~25–50 miles).");
-      return true;
-    } catch {
-      // Chain to Nominatim on error
-      return await nominatimFallback();
-    }
-  }
+      
+      // Snap to city center using OpenWeather reverse
+      await snapToCityCenter(c);
 
-  // New Nominatim fallback for better accuracy in some cases
-  async function nominatimFallback(): Promise<boolean> {
-    console.log('Falling back to Nominatim for IP geolocation'); // Debug
-    try {
-      // Nominatim requires a user-agent; use fetch with headers
-      const res = await fetch("https://nominatim.openstreetmap.org/reverse?format=json&lat=0&lon=0", { // Placeholder coords; adjust if needed
-        headers: { 'User-Agent': 'AlWeatherApp/1.0' }
-      });
-      if (!res.ok) return false;
-      const j = await res.json();
-
-      const lat = parseFloat(j.lat);
-      const lon = parseFloat(j.lon);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
-
-      setCoords({ lat, lon });
-      setActivePlace({
-        name: j.address.city || j.address.town || "Your area",
-        admin1: j.address.state || undefined,
-        country: j.address.country_code?.toUpperCase() || undefined,
-      });
-      setGeoNotice("Using secondary geolocation fallback (approximate).");
       return true;
     } catch {
       return false;
+    }
+  }
+
+  // New function to snap coords to city center using OpenWeather reverse
+  async function snapToCityCenter(c: Coords) {
+    try {
+      const url = `/api/geocode?lat=${c.lat}&lon=${c.lon}`; // Assume your route.ts is at /api/geocode
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Geocode snap failed");
+      const data = await res.json();
+
+      if (data.lat && data.lon) {
+        setCoords({ lat: data.lat, lon: data.lon });
+        setActivePlace({ name: data.name, admin1: data.state, country: data.country });
+        console.log('Snapped coords to city center:', data.lat, data.lon);
+      }
+    } catch (err) {
+      console.error('Snap error:', err);
     }
   }
 
@@ -607,32 +598,17 @@ export default function Page() {
       return false;
     }
 
-    // Added: Check permissions first
-    try {
-      const permission = await navigator.permissions.query({ name: 'geolocation' });
-      if (permission.state === 'denied') {
-        setGeoError("Location denied—enable in browser settings for accuracy.");
-        return false;
-      }
-    } catch {
-      // Ignore if Permissions API not supported
-    }
-
     setGeoLoading(true);
     setGeoError(null);
     setGeoNotice(null);
 
-    // Added UX note
-    if (!userInitiated) {
-      setGeoNotice("For accurate weather, enable location services in your browser settings.");
-    }
-
     const result = await new Promise<boolean>((resolve) => {
-      const success = (pos: GeolocationPosition) => {
-        console.log('Got coords from GPS: ', pos.coords); // Debug
+      const success = async (pos: GeolocationPosition) => {
         const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
         setCoords(c);
         reverseLookup(c);
+        // Snap to city center
+        await snapToCityCenter(c);
         setGeoLoading(false);
         setGeoError(null);
         setGeoNotice(null);
@@ -640,7 +616,6 @@ export default function Page() {
       };
 
       const finalFail = async (err: GeolocationPositionError) => {
-        console.log('Geolocation error code:', err.code); // Debug
         // Try IP fallback before giving up
         const usedIp = await ipGeoGuess();
         setGeoLoading(false);
@@ -667,15 +642,15 @@ export default function Page() {
         resolve(false);
       };
 
-      // Flipped: High-accuracy first for better precision
-      const firstOpts: PositionOptions = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
+      const firstOpts: PositionOptions = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }; // High first
       const secondOpts: PositionOptions = { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 };
 
       navigator.geolocation.getCurrentPosition(
         success,
         (err) => {
+          console.log('Geolocation error code:', err.code); // Debug
           if (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE) {
-            // Retry with low-accuracy
+            // Retry once with low-accuracy
             navigator.geolocation.getCurrentPosition(success, finalFail, secondOpts);
           } else {
             finalFail(err);
