@@ -24,6 +24,7 @@ import {
   ExternalLink,
   Maximize2,
   X,
+  LocateFixed,
 } from "lucide-react";
 
 /* =========================
@@ -101,25 +102,19 @@ function formatWind(w: number | null | undefined, unit: Unit) {
   return `${Math.round(w)} ${unit === "imperial" ? "mph" : "km/h"}`;
 }
 
-
+// Local-safe date label so daily dates aren’t off by one
 function shortDate(isoOrYmd: string) {
-  // If it's just YYYY-MM-DD, build a local Date to avoid UTC shift
   if (/^\d{4}-\d{2}-\d{2}$/.test(isoOrYmd)) {
     const [y, m, d] = isoOrYmd.split("-").map(Number);
-    const dt = new Date(y, m - 1, d); // local midnight, no UTC conversion
+    const dt = new Date(y, m - 1, d); // local midnight
     return dt.toLocaleDateString(undefined, {
       weekday: "short",
       month: "short",
       day: "numeric",
     });
   }
-  // Otherwise, treat it like a normal ISO string
   const d = new Date(isoOrYmd);
-  return d.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
 function shortTime(iso: string) {
@@ -128,15 +123,14 @@ function shortTime(iso: string) {
 }
 
 function weatherIcon(code: number | null) {
-  // Open-Meteo weather codes (compact mapping)
   if (code == null) return <Cloud className="h-6 w-6" aria-hidden />;
-  if ([0].includes(code)) return <Sun className="h-6 w-6" aria-hidden />; // Clear
-  if ([1, 2, 3].includes(code)) return <Cloud className="h-6 w-6" aria-hidden />; // Partly/Cloudy
-  if ([45, 48].includes(code)) return <CloudFog className="h-6 w-6" aria-hidden />; // Fog
-  if ([51, 53, 55, 61, 63, 65].includes(code)) return <CloudRain className="h-6 w-6" aria-hidden />; // Rain
-  if ([80, 81, 82].includes(code)) return <CloudDrizzle className="h-6 w-6" aria-hidden />; // Showers
-  if ([71, 73, 75, 77, 85, 86].includes(code)) return <CloudSnow className="h-6 w-6" aria-hidden />; // Snow
-  if ([95, 96, 99].includes(code)) return <CloudLightning className="h-6 w-6" aria-hidden />; // Thunder
+  if ([0].includes(code)) return <Sun className="h-6 w-6" aria-hidden />;
+  if ([1, 2, 3].includes(code)) return <Cloud className="h-6 w-6" aria-hidden />;
+  if ([45, 48].includes(code)) return <CloudFog className="h-6 w-6" aria-hidden />;
+  if ([51, 53, 55, 61, 63, 65].includes(code)) return <CloudRain className="h-6 w-6" aria-hidden />;
+  if ([80, 81, 82].includes(code)) return <CloudDrizzle className="h-6 w-6" aria-hidden />;
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return <CloudSnow className="h-6 w-6" aria-hidden />;
+  if ([95, 96, 99].includes(code)) return <CloudLightning className="h-6 w-6" aria-hidden />;
   return <Cloud className="h-6 w-6" aria-hidden />;
 }
 
@@ -255,16 +249,10 @@ function MapPanel({
 
   return (
     <>
-      {/* Inline map (taller by default) */}
       <div
-        className={clsx(
-          "relative rounded-xl overflow-hidden",
-          "bg-black/20 ring-1 ring-white/10",
-          className
-        )}
+        className={clsx("relative rounded-xl overflow-hidden", "bg-black/20 ring-1 ring-white/10", className)}
         style={{ height: "640px" }}
       >
-        {/* controls */}
         <div className="absolute right-3 top-3 z-10 flex gap-2">
           <a
             href={href}
@@ -286,12 +274,9 @@ function MapPanel({
             Expand
           </button>
         </div>
-
-        {/* map */}
         <div className="absolute inset-0">{frame}</div>
       </div>
 
-      {/* Full-screen modal */}
       {full && (
         <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm" role="dialog" aria-modal="true">
           <button
@@ -331,7 +316,7 @@ export default function Page() {
   const [activePlace, setActivePlace] = useState<{ name: string; admin1?: string; country?: string } | null>(null);
   const [coords, setCoords] = useState<Coords | null>(null);
 
-  // Panels state
+  // Loading state
   const [loadingCurrent, setLoadingCurrent] = useState(true);
   const [loadingDaily, setLoadingDaily] = useState(true);
   const [loadingHourly, setLoadingHourly] = useState(true);
@@ -342,17 +327,41 @@ export default function Page() {
   const [hourly, setHourly] = useState<HourlyPoint[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
 
+  // Errors
   const [error, setError] = useState<string | null>(null);
   const [alertError, setAlertError] = useState<string | null>(null);
+
+  // Sharing
   const [copied, setCopied] = useState(false);
 
   // Tabs
   const [tab, setTab] = useState<"now" | "hours" | "radar" | "alerts">("now");
 
-  // AbortControllers for cancellation
+  // Geolocation UX
+  type GeoPermissionState = "granted" | "prompt" | "denied" | "unsupported";
+  const [geoPerm, setGeoPerm] = useState<GeoPermissionState>("prompt");
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
+
+  // AbortControllers
   const ctrlGeo = useRef<AbortController | null>(null);
   const ctrlForecast = useRef<AbortController | null>(null);
   const ctrlAlerts = useRef<AbortController | null>(null);
+
+  /* ----- Permissions API (if available) ----- */
+  useEffect(() => {
+    if (!("permissions" in navigator) || !navigator.permissions?.query) {
+      setGeoPerm("unsupported");
+      return;
+    }
+    navigator.permissions
+      .query({ name: "geolocation" as PermissionName })
+      .then((p) => {
+        setGeoPerm(p.state);
+        p.onchange = () => setGeoPerm(p.state);
+      })
+      .catch(() => setGeoPerm("unsupported"));
+  }, []);
 
   /* ----- Boot ----- */
   useEffect(() => {
@@ -373,25 +382,12 @@ export default function Page() {
       }
     }
 
-    // 2) Try geolocation
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-          setCoords(c);
-          reverseLookup(c);
-        },
-        () => {
-          // 3) Fallback
-          setCoords({ lat: DEFAULT_CITY.lat, lon: DEFAULT_CITY.lon });
-          setActivePlace({ name: DEFAULT_CITY.name, admin1: DEFAULT_CITY.admin1, country: DEFAULT_CITY.country });
-        },
-        { enableHighAccuracy: true, timeout: 8000 }
-      );
-    } else {
+    // 2) Try geolocation automatically (some browsers require user gesture; if it fails, we show a button)
+    requestGeolocation(false).catch(() => {
+      // If automatic attempt fails (timeout/permission), we’ll fall back and show controls.
       setCoords({ lat: DEFAULT_CITY.lat, lon: DEFAULT_CITY.lon });
       setActivePlace({ name: DEFAULT_CITY.name, admin1: DEFAULT_CITY.admin1, country: DEFAULT_CITY.country });
-    }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -435,7 +431,7 @@ export default function Page() {
     }
   }
 
-  // Submit handler so Enter key works
+  // Enter submits
   function onSubmitSearch(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     runSearch();
@@ -451,7 +447,6 @@ export default function Page() {
       ctrlGeo.current?.abort();
       ctrlGeo.current = new AbortController();
 
-      // Parse "City, ST" or "City, State Name"
       let city = raw;
       let desiredState: string | null = null;
 
@@ -461,7 +456,6 @@ export default function Page() {
         const statePart = raw.slice(commaIdx + 1).trim();
         desiredState = resolveStateName(statePart);
       } else {
-        // Allow "City ST" or "City State"
         const parts = raw.split(/\s+/);
         if (parts.length >= 2) {
           const maybeState = parts[parts.length - 1];
@@ -473,7 +467,6 @@ export default function Page() {
         }
       }
 
-      // Ask for multiple candidates; we’ll pick the best
       const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
         city
       )}&count=10&language=en&format=json`;
@@ -487,7 +480,7 @@ export default function Page() {
         longitude: number;
         country_code?: string;
         country?: string;
-        admin1?: string; // state/province
+        admin1?: string;
         population?: number | null;
       };
 
@@ -497,10 +490,9 @@ export default function Page() {
         return;
       }
 
-      // Prefer US results
       const us = results.filter((r) => r.country_code === "US");
-
       let pick: GeoResult | undefined;
+
       if (desiredState) {
         const pool = us.length ? us : results;
         const stateMatches = pool.filter((r) => norm(r.admin1 || "") === norm(desiredState as string));
@@ -510,16 +502,78 @@ export default function Page() {
           return;
         }
       } else {
-        // No state given: choose the most populous US match, or fallback to global
         pick = (us.length ? us : results).sort((a, b) => (b.population ?? 0) - (a.population ?? 0))[0];
       }
 
       setActivePlace({ name: pick.name, admin1: pick.admin1, country: pick.country_code });
       setCoords({ lat: pick.latitude, lon: pick.longitude });
+      setGeoError(null);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Search error";
       setError(message);
     }
+  }
+
+  // Robust geolocation with retries and clear errors
+  async function requestGeolocation(userInitiated: boolean) {
+    if (!window.isSecureContext) {
+      setGeoError("Location requires HTTPS. Please use https://alweather.org");
+      return;
+    }
+    if (!navigator.geolocation) {
+      setGeoError("Your browser doesn’t support location.");
+      return;
+    }
+
+    return new Promise<void>((resolve) => {
+      setGeoLoading(true);
+      setGeoError(null);
+
+      const success = (pos: GeolocationPosition) => {
+        const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        setCoords(c);
+        reverseLookup(c);
+        setGeoLoading(false);
+        setGeoError(null);
+        resolve();
+      };
+
+      const finalFail = (err: GeolocationPositionError) => {
+        setGeoLoading(false);
+        switch (err.code) {
+          case err.PERMISSION_DENIED:
+            setGeoError(
+              userInitiated
+                ? "Location permission denied. Enable it in your browser settings for alweather.org."
+                : "We couldn’t access your location. Click “Use my location” and allow permission."
+            );
+            break;
+          case err.POSITION_UNAVAILABLE:
+            setGeoError("Location unavailable. Try again or check your device’s location services.");
+            break;
+          case err.TIMEOUT:
+          default:
+            setGeoError("Timed out getting location. Try again.");
+        }
+        resolve();
+      };
+
+      const firstOpts: PositionOptions = { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }; // use cached if recent
+      const secondOpts: PositionOptions = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }; // retry
+
+      navigator.geolocation.getCurrentPosition(
+        success,
+        (err) => {
+          if (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE) {
+            // retry once with high accuracy
+            navigator.geolocation.getCurrentPosition(success, finalFail, secondOpts);
+          } else {
+            finalFail(err);
+          }
+        },
+        firstOpts
+      );
+    });
   }
 
   async function fetchForecast(c: Coords, unit: Unit) {
@@ -562,7 +616,6 @@ export default function Page() {
       if (!res.ok) throw new Error("Forecast failed");
       const data = await res.json();
 
-      // Current
       setCurrent({
         time: data?.current?.time,
         temperature: data?.current?.temperature_2m ?? null,
@@ -575,7 +628,6 @@ export default function Page() {
       });
       setLoadingCurrent(false);
 
-      // Daily
       const d: DailyBlock[] = (data?.daily?.time || []).map((t: string, i: number) => ({
         date: t,
         tmax: data?.daily?.temperature_2m_max?.[i] ?? null,
@@ -586,7 +638,6 @@ export default function Page() {
       setDaily(d);
       setLoadingDaily(false);
 
-      // Hourly (next 48 hours)
       const hours: HourlyPoint[] = (data?.hourly?.time || [])
         .map((t: string, i: number) => ({
           time: t,
@@ -699,7 +750,7 @@ export default function Page() {
             </span>
           </motion.div>
 
-          <div className="ml-auto flex items-center gap-2 w-full max-w-xl">
+          <div className="ml-auto flex items-center gap-2 w-full max-w-2xl">
             {/* Search form – Enter submits */}
             <form onSubmit={onSubmitSearch} className="flex items-center gap-2 w-full">
               <label htmlFor="city" className="sr-only">
@@ -722,7 +773,18 @@ export default function Page() {
               </button>
             </form>
 
-            {/* Unit toggle (outside form so it doesn't submit) */}
+            {/* Use my location (manual trigger helps Safari/iOS show the prompt) */}
+            <button
+              onClick={() => requestGeolocation(true)}
+              className="inline-flex items-center gap-2 rounded-xl ring-1 ring-white/10 px-3 py-2 hover:bg-white/5"
+              aria-label="Use my location"
+              disabled={geoLoading}
+            >
+              {geoLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
+              <span className="text-sm">{geoLoading ? "Locating..." : "Use my location"}</span>
+            </button>
+
+            {/* Unit toggle */}
             <div role="group" aria-label="Unit" className="hidden sm:flex rounded-xl overflow-hidden ring-1 ring-white/10">
               <button
                 onClick={() => setUnit("imperial")}
@@ -759,6 +821,15 @@ export default function Page() {
             </button>
           </div>
         </div>
+
+        {/* Geolocation notice */}
+        {geoError && (
+          <div className="mx-auto max-w-6xl px-4 pb-3 -mt-2">
+            <div className="rounded-xl bg-rose-500/10 ring-1 ring-rose-400/30 px-3 py-2 text-rose-100 text-sm" role="status" aria-live="polite">
+              {geoError}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Alert banner */}
@@ -776,8 +847,7 @@ export default function Page() {
 
       {/* Hero */}
       <section className="mx-auto max-w-6xl px-4 pt-8">
-        <div className="relative overflow-hidden rounded-3xl ring-1 ring-white/10 bg-white/5">
-          {/* subtle motion aura */}
+        <div className="relative overflow-hidden rounded-3xl ring-1 ring-white/10 bg白/5 bg-white/5">
           <div className="absolute inset-0 pointer-events-none">
             <motion.div
               className="absolute -top-24 -left-24 h-72 w-72 rounded-full blur-3xl"
@@ -879,7 +949,6 @@ export default function Page() {
         {/* NOW */}
         {tab === "now" && (
           <section id="panel-now" className="mt-6 grid gap-6 md:grid-cols-3">
-            {/* Current card */}
             <Card>
               {loadingCurrent ? (
                 <Skeleton lines={6} />
@@ -894,16 +963,8 @@ export default function Page() {
                     <span className="text-slate-200">feels like {formatTemp(current.apparent, unit)}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-3 pt-2">
-                    <Metric
-                      icon={<Thermometer className="h-4 w-4" />}
-                      label="Humidity"
-                      value={current.humidity != null ? `${Math.round(current.humidity)}%` : "—"}
-                    />
-                    <Metric
-                      icon={<Droplets className="h-4 w-4" />}
-                      label="Precip"
-                      value={current.precipitation != null ? `${current.precipitation}${unit === "imperial" ? " in" : " mm"}` : "—"}
-                    />
+                    <Metric icon={<Thermometer className="h-4 w-4" />} label="Humidity" value={current.humidity != null ? `${Math.round(current.humidity)}%` : "—"} />
+                    <Metric icon={<Droplets className="h-4 w-4" />} label="Precip" value={current.precipitation != null ? `${current.precipitation}${unit === "imperial" ? " in" : " mm"}` : "—"} />
                     <Metric icon={<Wind className="h-4 w-4" />} label="Wind" value={formatWind(current.windSpeed, unit)} />
                     <Metric icon={<Wind className="h-4 w-4" />} label="Gusts" value={formatWind(current.windGust, unit)} />
                   </div>
@@ -924,10 +985,10 @@ export default function Page() {
                 <Skeleton lines={5} />
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-                  {daily.map((d) => (
+                  {daily.map((d, i) => (
                     <div key={d.date} className="rounded-xl bg-white/5 p-3 ring-1 ring-white/10 hover:bg-white/10 transition">
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-200 text-sm">{shortDate(d.date)}</span>
+                        <span className="text-slate-200 text-sm">{i === 0 ? "Today" : shortDate(d.date)}</span>
                         {weatherIcon(d.weatherCode)}
                       </div>
                       <div className="mt-2 flex items-end gap-2">
@@ -969,10 +1030,7 @@ export default function Page() {
                       <span className="w-24 text-sm text-slate-300">{h.precipProb != null ? `${h.precipProb}%` : "—"} precip</span>
                       <span className="flex-1" aria-hidden>
                         <div className="h-1 rounded bg-white/10">
-                          <div
-                            className="h-1 rounded bg-sky-500"
-                            style={{ width: `${Math.min(100, Math.max(0, h.precipProb ?? 0))}%` }}
-                          />
+                          <div className="h-1 rounded bg-sky-500" style={{ width: `${Math.min(100, Math.max(0, h.precipProb ?? 0))}%` }} />
                         </div>
                       </span>
                       <span className="ml-auto">{weatherIcon(h.weatherCode)}</span>
@@ -1016,12 +1074,7 @@ export default function Page() {
                   {alerts.map((a) => (
                     <details key={a.id} className="group rounded-xl bg-white/5 ring-1 ring-white/10">
                       <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
-                        <span
-                          className={clsx(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                            chipColor(a.severity)
-                          )}
-                        >
+                        <span className={clsx("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", chipColor(a.severity))}>
                           {a.severity || "Unknown"}
                         </span>
                         <span className="font-medium">{a.event}</span>
@@ -1058,11 +1111,7 @@ export default function Page() {
    ========================= */
 
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={clsx("rounded-3xl bg-slate-900/60 p-4 ring-1 ring-white/10 shadow-xl shadow-slate-950/30 backdrop-blur", className)}>
-      {children}
-    </div>
-  );
+  return <div className={clsx("rounded-3xl bg-slate-900/60 p-4 ring-1 ring-white/10 shadow-xl shadow-slate-950/30 backdrop-blur", className)}>{children}</div>;
 }
 
 function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
@@ -1107,10 +1156,7 @@ function chipColor(sev?: string) {
 function ClockIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
-      <path
-        fill="currentColor"
-        d="M12 1.75A10.25 10.25 0 1 0 22.25 12 10.262 10.262 0 0 0 12 1.75Zm.75 5a.75.75 0 0 0-1.5 0v5.19l-3.1 1.79a.75.75 0 1 0 .75 1.3l3.35-1.94A.75.75 0 0 0 12.75 12Z"
-      />
+      <path fill="currentColor" d="M12 1.75A10.25 10.25 0 1 0 22.25 12 10.262 10.262 0 0 0 12 1.75Zm.75 5a.75.75 0 0 0-1.5 0v5.19l-3.1 1.79a.75.75 0 1 0 .75 1.3l3.35-1.94A.75.75 0 0 0 12.75 12Z" />
     </svg>
   );
 }
