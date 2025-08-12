@@ -1,12 +1,3 @@
-/* src/app/globals.css */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* optional: small quality-of-life defaults */
-html, body {
-  height: 100%;
-}
-:root {
-  color-scheme: dark; /* we’re building a dark UI */
-}
+@import "tailwindcss";
+html, body { height: 100%; }
+:root { color-scheme: dark; }
