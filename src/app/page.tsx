@@ -101,8 +101,20 @@ function formatWind(w: number | null | undefined, unit: Unit) {
   return `${Math.round(w)} ${unit === "imperial" ? "mph" : "km/h"}`;
 }
 
-function shortDate(iso: string) {
-  const d = new Date(iso);
+
+function shortDate(isoOrYmd: string) {
+  // If it's just YYYY-MM-DD, build a local Date to avoid UTC shift
+  if (/^\d{4}-\d{2}-\d{2}$/.test(isoOrYmd)) {
+    const [y, m, d] = isoOrYmd.split("-").map(Number);
+    const dt = new Date(y, m - 1, d); // local midnight, no UTC conversion
+    return dt.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  }
+  // Otherwise, treat it like a normal ISO string
+  const d = new Date(isoOrYmd);
   return d.toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
