@@ -103,7 +103,7 @@ function formatWind(w: number | null | undefined, unit: Unit) {
   return `${Math.round(w)} ${unit === "imperial" ? "mph" : "km/h"}`;
 }
 
-// Local-safe date label so daily dates aren’t off by one
+// Local date label so daily dates aren’t off by one
 function shortDate(isoOrYmd: string) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(isoOrYmd)) {
     const [y, m, d] = isoOrYmd.split("-").map(Number);
@@ -135,31 +135,42 @@ function weatherIcon(code: number | null) {
   return <Cloud className="h-6 w-6" aria-hidden />;
 }
 
+/* Windy embed URL – match official generator format exactly */
 function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
   const { lat, lon } = coords;
-  const temp = unit === "imperial" ? "F" : "C";
-  const wind = unit === "imperial" ? "mph" : "km/h";
-  const params = new URLSearchParams({
+
+  // Windy expects these *display* strings, including the degree sign
+  const metricTemp = unit === "imperial" ? "°F" : "°C";
+  const metricWind = unit === "imperial" ? "mph" : "km/h";
+
+  const p = new URLSearchParams({
     lat: String(lat),
     lon: String(lon),
     detailLat: String(lat),
     detailLon: String(lon),
+
     zoom: String(zoom),
     level: "surface",
     overlay: "radar",
-    product: "radar",
-    menu: "false",
-    message: "true",
-    marker: "true",
-    calendar: "now",
-    pressure: "true",
+    product: "ecmwf",       // model selection; works with radar overlay
+    radarRange: "-1",
+
+    // UI toggles (empty string == off/hidden)
+    menu: "",
+    message: "",
+    marker: "",
+    pressure: "",
+    detail: "",
+
     type: "map",
     location: "coordinates",
-    detail: "true",
-    metricWind: wind,
-    metricTemp: temp,
+    calendar: "now",
+
+    metricWind,
+    metricTemp,
   });
-  return `https://embed.windy.com/embed2.html?${params.toString()}`;
+
+  return `https://embed.windy.com/embed2.html?${p.toString()}`;
 }
 
 /* ===== Background theme (time+weather aware) ===== */
@@ -215,7 +226,7 @@ function resolveStateName(input: string): string | null {
 }
 
 /* =========================
-   Full-screen Radar Panel
+   Full-screen Radar Panel (force remount on change)
    ========================= */
 
 function MapPanel({
@@ -229,14 +240,11 @@ function MapPanel({
 }) {
   const [full, setFull] = useState(false);
 
-  // Base Windy URL (centers on current coords)
   const hrefBase = useMemo(() => windyUrl(coords, unit, 8), [coords, unit]);
 
   // Change this whenever coords/unit change to remount the iframe
-  const frameKey = `${coords.lat.toFixed(3)}:${coords.lon.toFixed(3)}:${unit}`;
-
-  // Add a harmless version param too, to nudge reloads in some browsers
-  const href = `${hrefBase}&v=${encodeURIComponent(frameKey)}`;
+  const frameKey = `${coords.lat.toFixed(5)}:${coords.lon.toFixed(5)}:${unit}`;
+  const href = `${hrefBase}&v=${encodeURIComponent(frameKey)}`; // cache-bust hint
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -248,7 +256,7 @@ function MapPanel({
 
   const frame = (
     <iframe
-      key={frameKey} // <-- force remount on location/unit change
+      key={frameKey} // <- force remount on location/unit change
       title="Radar Map"
       src={href}
       className="w-full h-full rounded-xl border border-white/10 shadow-xl"
@@ -414,7 +422,7 @@ export default function Page() {
      API calls
      ========================= */
 
-  // REPLACED: Open-Meteo reverse -> BigDataCloud reverse (CORS-friendly)
+  // Reverse geocode -> BigDataCloud (CORS-friendly)
   async function reverseLookup(c: Coords) {
     try {
       const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${c.lat}&longitude=${c.lon}&localityLanguage=en`;
@@ -434,7 +442,7 @@ export default function Page() {
 
       setActivePlace({ name, admin1, country });
     } catch {
-      // ignore (coords still usable)
+      // ignore; coords still usable
     }
   }
 
@@ -444,7 +452,7 @@ export default function Page() {
     runSearch();
   }
 
-  // City, State aware search (kept on Open-Meteo forward geocode)
+  // City, State aware forward geocode (Open-Meteo)
   async function runSearch() {
     const raw = query.trim();
     if (!raw) return;
@@ -511,10 +519,13 @@ export default function Page() {
         pick = (us.length ? us : results).sort((a, b) => (b.population ?? 0) - (a.population ?? 0))[0];
       }
 
+      const c = { lat: pick.latitude, lon: pick.longitude };
       setActivePlace({ name: pick.name, admin1: pick.admin1, country: pick.country_code });
-      setCoords({ lat: pick.latitude, lon: pick.longitude });
+      setCoords(c);
       setGeoError(null);
       setGeoNotice(null);
+      // Refresh reverse geocode display name using BDC (optional)
+      reverseLookup(c);
     } catch (e) {
       setGeoError(e instanceof Error ? e.message : "Search error");
     }
@@ -694,7 +705,7 @@ export default function Page() {
         .slice(0, 48);
       setHourly(hours);
     } catch {
-      // ignore error UI; top cards will show skeletons then "No data" if needed
+      // ignore; UI shows skeletons first
     } finally {
       setLoadingCurrent(false);
       setLoadingDaily(false);
