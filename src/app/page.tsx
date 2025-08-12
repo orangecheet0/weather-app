@@ -228,7 +228,15 @@ function MapPanel({
   className?: string;
 }) {
   const [full, setFull] = useState(false);
-  const href = useMemo(() => windyUrl(coords, unit, 8), [coords, unit]);
+
+  // Base Windy URL (centers on current coords)
+  const hrefBase = useMemo(() => windyUrl(coords, unit, 8), [coords, unit]);
+
+  // Change this whenever coords/unit change to remount the iframe
+  const frameKey = `${coords.lat.toFixed(3)}:${coords.lon.toFixed(3)}:${unit}`;
+
+  // Add a harmless version param too, to nudge reloads in some browsers
+  const href = `${hrefBase}&v=${encodeURIComponent(frameKey)}`;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -240,6 +248,7 @@ function MapPanel({
 
   const frame = (
     <iframe
+      key={frameKey} // <-- force remount on location/unit change
       title="Radar Map"
       src={href}
       className="w-full h-full rounded-xl border border-white/10 shadow-xl"
@@ -250,10 +259,12 @@ function MapPanel({
 
   return (
     <>
+      {/* Inline map (taller by default) */}
       <div
         className={clsx("relative rounded-xl overflow-hidden", "bg-black/20 ring-1 ring-white/10", className)}
         style={{ height: "640px" }}
       >
+        {/* controls */}
         <div className="absolute right-3 top-3 z-10 flex gap-2">
           <a
             href={href}
@@ -275,9 +286,12 @@ function MapPanel({
             Expand
           </button>
         </div>
+
+        {/* map */}
         <div className="absolute inset-0">{frame}</div>
       </div>
 
+      {/* Full-screen modal */}
       {full && (
         <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm" role="dialog" aria-modal="true">
           <button
@@ -291,6 +305,7 @@ function MapPanel({
           <div className="absolute inset-0 p-4 md:p-6 lg:p-8">
             <div className="h-full w-full rounded-2xl ring-1 ring-white/10 overflow-hidden bg-black/40">
               <iframe
+                key={`full-${frameKey}`} // separate key for the modal instance
                 title="Radar Map (Full Screen)"
                 src={href}
                 className="h-full w-full"
