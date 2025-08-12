@@ -399,17 +399,27 @@ export default function Page() {
      API calls
      ========================= */
 
+  // REPLACED: Open-Meteo reverse -> BigDataCloud reverse (CORS-friendly)
   async function reverseLookup(c: Coords) {
     try {
-      ctrlGeo.current?.abort();
-      ctrlGeo.current = new AbortController();
-      const url = `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${c.lat}&longitude=${c.lon}&language=en&format=json`;
-      const res = await fetch(url, { signal: ctrlGeo.current.signal });
-      const data = await res.json();
-      const first = data?.results?.[0];
-      if (first) setActivePlace({ name: first.name, admin1: first.admin1, country: first.country_code });
+      const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${c.lat}&longitude=${c.lon}&localityLanguage=en`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("reverse geocode failed");
+      const j: {
+        city?: string;
+        locality?: string;
+        principalSubdivision?: string;
+        countryName?: string;
+        countryCode?: string;
+      } = await res.json();
+
+      const name = j.city || j.locality || "Your area";
+      const admin1 = j.principalSubdivision || undefined;
+      const country = j.countryCode || j.countryName || undefined;
+
+      setActivePlace({ name, admin1, country });
     } catch {
-      // ignore
+      // ignore (coords still usable)
     }
   }
 
@@ -419,7 +429,7 @@ export default function Page() {
     runSearch();
   }
 
-  // City, State aware search
+  // City, State aware search (kept on Open-Meteo forward geocode)
   async function runSearch() {
     const raw = query.trim();
     if (!raw) return;
@@ -495,21 +505,30 @@ export default function Page() {
     }
   }
 
-  // Try IP-based geolocation as a backup (HTTPS, no key required)
+  // IP-based geolocation fallback (BigDataCloud, no key)
   async function ipGeoGuess(): Promise<boolean> {
     try {
-      const res = await fetch("https://ipapi.co/json/");
+      const res = await fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=en");
       if (!res.ok) return false;
-      const j = await res.json();
-      const lat = Number(j?.latitude);
-      const lon = Number(j?.longitude);
+      const j: {
+        latitude?: number | string;
+        longitude?: number | string;
+        city?: string;
+        locality?: string;
+        principalSubdivision?: string;
+        countryName?: string;
+        countryCode?: string;
+      } = await res.json();
+
+      const lat = Number(j.latitude);
+      const lon = Number(j.longitude);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
 
       setCoords({ lat, lon });
       setActivePlace({
-        name: j?.city || "Your area",
-        admin1: j?.region || undefined,
-        country: j?.country_code || undefined,
+        name: j.city || j.locality || "Your area",
+        admin1: j.principalSubdivision || undefined,
+        country: j.countryCode || j.countryName || undefined,
       });
       setGeoNotice("Using approximate location based on your IP (may be off by ~25–50 miles).");
       return true;
@@ -640,7 +659,6 @@ export default function Page() {
         windGust: data?.current?.wind_gusts_10m ?? null,
         weatherCode: data?.current?.weather_code ?? null,
       });
-      setLoadingCurrent(false);
 
       const d: DailyBlock[] = (data?.daily?.time || []).map((t: string, i: number) => ({
         date: t,
@@ -650,7 +668,6 @@ export default function Page() {
         weatherCode: data?.daily?.weather_code?.[i] ?? null,
       }));
       setDaily(d);
-      setLoadingDaily(false);
 
       const hours: HourlyPoint[] = (data?.hourly?.time || [])
         .map((t: string, i: number) => ({
@@ -661,8 +678,9 @@ export default function Page() {
         }))
         .slice(0, 48);
       setHourly(hours);
-      setLoadingHourly(false);
-    } catch (e) {
+    } catch {
+      // ignore error UI; top cards will show skeletons then "No data" if needed
+    } finally {
       setLoadingCurrent(false);
       setLoadingDaily(false);
       setLoadingHourly(false);
@@ -708,9 +726,9 @@ export default function Page() {
         areaDesc: f?.properties?.areaDesc,
       }));
       setAlerts(items);
-      setLoadingAlerts(false);
     } catch {
       setAlerts([]);
+    } finally {
       setLoadingAlerts(false);
     }
   }
@@ -1120,7 +1138,7 @@ export default function Page() {
 
         {/* Footer note */}
         <p className="mt-10 text-center text-xs text-slate-300/80">
-          Data: Open-Meteo (forecast, geocoding). Alerts: NWS (best-effort). Built with Next.js & Tailwind.
+          Data: Open-Meteo (forecast, geocoding). Reverse/IP: BigDataCloud. Alerts: NWS. Built with Next.js & Tailwind.
         </p>
       </main>
     </div>
