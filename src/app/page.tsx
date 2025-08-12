@@ -556,8 +556,8 @@ export default function Page() {
         const data: WeatherData = await res.json();
         setWeatherData(data);
 
-      } catch (err: any) {
-        if (err.name !== 'AbortError') {
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== 'AbortError') {
           setError(err.message);
         }
       } finally {
@@ -610,8 +610,9 @@ export default function Page() {
       setCoords(c);
       setError(null);
 
-    } catch (e: any) {
-      setError(e.message || "Search error");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Search error";
+      setError(message);
     }
   }
   
