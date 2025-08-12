@@ -1,16 +1,13 @@
-import type { Metadata } from "next";
+// src/app/layout.tsx
 import "./globals.css";
+import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "ALWeather",
-  description: "Get real-time weather updates, forecasts, and alerts.",
+  title: "AlWeather",
+  description: "Clean, fast weather for Alabama.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className="antialiased">{children}</body>

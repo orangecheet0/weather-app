@@ -1,0 +1,17 @@
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/**/*.{js,ts,jsx,tsx,mdx}", // covers src/app/**
+  ],
+  theme: {
+    extend: {
+      boxShadow: {
+        'xl-dark': '0 20px 50px -20px rgba(0,0,0,0.6)',
+      },
+    },
+  },
+  plugins: [],
+};
