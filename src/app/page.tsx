@@ -25,6 +25,7 @@ import {
   Maximize2,
   X,
   LocateFixed,
+  Info,
 } from "lucide-react";
 
 /* =========================
@@ -249,12 +250,10 @@ function MapPanel({
 
   return (
     <>
-      {/* Inline map (taller by default) */}
       <div
         className={clsx("relative rounded-xl overflow-hidden", "bg-black/20 ring-1 ring-white/10", className)}
         style={{ height: "640px" }}
       >
-        {/* controls */}
         <div className="absolute right-3 top-3 z-10 flex gap-2">
           <a
             href={href}
@@ -276,12 +275,9 @@ function MapPanel({
             Expand
           </button>
         </div>
-
-        {/* map */}
         <div className="absolute inset-0">{frame}</div>
       </div>
 
-      {/* Full-screen modal */}
       {full && (
         <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm" role="dialog" aria-modal="true">
           <button
@@ -332,41 +328,19 @@ export default function Page() {
   const [hourly, setHourly] = useState<HourlyPoint[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
 
-  // Errors
-  const [error, setError] = useState<string | null>(null);
-  const [alertError, setAlertError] = useState<string | null>(null);
-
-  // Sharing
-  const [copied, setCopied] = useState(false);
-
-  // Tabs
-  const [tab, setTab] = useState<"now" | "hours" | "radar" | "alerts">("now");
-
-  // Geolocation UX
-  type GeoPermissionState = "granted" | "prompt" | "denied" | "unsupported";
-  const [geoPerm, setGeoPerm] = useState<GeoPermissionState>("prompt");
+  // Geolocation/alerts
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
+  const [geoNotice, setGeoNotice] = useState<string | null>(null);
+
+  // Sharing & tabs
+  const [copied, setCopied] = useState(false);
+  const [tab, setTab] = useState<"now" | "hours" | "radar" | "alerts">("now");
 
   // AbortControllers
   const ctrlGeo = useRef<AbortController | null>(null);
   const ctrlForecast = useRef<AbortController | null>(null);
   const ctrlAlerts = useRef<AbortController | null>(null);
-
-  /* ----- Permissions API (if available) ----- */
-  useEffect(() => {
-    if (!("permissions" in navigator) || !navigator.permissions?.query) {
-      setGeoPerm("unsupported");
-      return;
-    }
-    navigator.permissions
-      .query({ name: "geolocation" as PermissionName })
-      .then((p) => {
-        setGeoPerm(p.state);
-        p.onchange = () => setGeoPerm(p.state);
-      })
-      .catch(() => setGeoPerm("unsupported"));
-  }, []);
 
   /* ----- Boot ----- */
   useEffect(() => {
@@ -388,7 +362,7 @@ export default function Page() {
       }
     }
 
-    // 2) Try geolocation; if it doesn't succeed, fallback to default
+    // 2) Try geolocation; if it doesn't succeed, fallback to default (Huntsville)
     (async () => {
       const ok = await requestGeolocation(false);
       if (!ok) {
@@ -451,7 +425,6 @@ export default function Page() {
     if (!raw) return;
 
     try {
-      setError(null);
       ctrlGeo.current?.abort();
       ctrlGeo.current = new AbortController();
 
@@ -494,7 +467,7 @@ export default function Page() {
 
       const results: GeoResult[] = Array.isArray(data?.results) ? data.results : [];
       if (results.length === 0) {
-        setError(`No matches. Try a city + state, like "Huntsville, AL".`);
+        setGeoError(`No matches. Try a city + state, like "Huntsville, AL".`);
         return;
       }
 
@@ -506,7 +479,7 @@ export default function Page() {
         const stateMatches = pool.filter((r) => norm(r.admin1 || "") === norm(desiredState as string));
         pick = stateMatches.sort((a, b) => (b.population ?? 0) - (a.population ?? 0))[0];
         if (!pick) {
-          setError(`No city "${city}" found in ${desiredState}.`);
+          setGeoError(`No city "${city}" found in ${desiredState}.`);
           return;
         }
       } else {
@@ -516,9 +489,32 @@ export default function Page() {
       setActivePlace({ name: pick.name, admin1: pick.admin1, country: pick.country_code });
       setCoords({ lat: pick.latitude, lon: pick.longitude });
       setGeoError(null);
+      setGeoNotice(null);
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Search error";
-      setError(message);
+      setGeoError(e instanceof Error ? e.message : "Search error");
+    }
+  }
+
+  // Try IP-based geolocation as a backup (HTTPS, no key required)
+  async function ipGeoGuess(): Promise<boolean> {
+    try {
+      const res = await fetch("https://ipapi.co/json/");
+      if (!res.ok) return false;
+      const j = await res.json();
+      const lat = Number(j?.latitude);
+      const lon = Number(j?.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+
+      setCoords({ lat, lon });
+      setActivePlace({
+        name: j?.city || "Your area",
+        admin1: j?.region || undefined,
+        country: j?.country_code || undefined,
+      });
+      setGeoNotice("Using approximate location based on your IP (may be off by ~25–50 miles).");
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -533,21 +529,30 @@ export default function Page() {
       return false;
     }
 
-    return new Promise<boolean>((resolve) => {
-      setGeoLoading(true);
-      setGeoError(null);
+    setGeoLoading(true);
+    setGeoError(null);
+    setGeoNotice(null);
 
+    const result = await new Promise<boolean>((resolve) => {
       const success = (pos: GeolocationPosition) => {
         const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
         setCoords(c);
         reverseLookup(c);
         setGeoLoading(false);
         setGeoError(null);
+        setGeoNotice(null);
         resolve(true);
       };
 
-      const finalFail = (err: GeolocationPositionError) => {
+      const finalFail = async (err: GeolocationPositionError) => {
+        // Try IP fallback before giving up
+        const usedIp = await ipGeoGuess();
         setGeoLoading(false);
+        if (usedIp) {
+          resolve(true);
+          return;
+        }
+
         switch (err.code) {
           case err.PERMISSION_DENIED:
             setGeoError(
@@ -573,6 +578,7 @@ export default function Page() {
         success,
         (err) => {
           if (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE) {
+            // Retry once with high-accuracy
             navigator.geolocation.getCurrentPosition(success, finalFail, secondOpts);
           } else {
             finalFail(err);
@@ -581,6 +587,8 @@ export default function Page() {
         firstOpts
       );
     });
+
+    return result;
   }
 
   async function fetchForecast(c: Coords, unit: Unit) {
@@ -588,7 +596,6 @@ export default function Page() {
       setLoadingCurrent(true);
       setLoadingDaily(true);
       setLoadingHourly(true);
-      setError(null);
 
       ctrlForecast.current?.abort();
       ctrlForecast.current = new AbortController();
@@ -656,8 +663,6 @@ export default function Page() {
       setHourly(hours);
       setLoadingHourly(false);
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Unable to load forecast";
-      setError(message);
       setLoadingCurrent(false);
       setLoadingDaily(false);
       setLoadingHourly(false);
@@ -667,7 +672,6 @@ export default function Page() {
   async function fetchAlerts(c: Coords) {
     try {
       setLoadingAlerts(true);
-      setAlertError(null);
       ctrlAlerts.current?.abort();
       ctrlAlerts.current = new AbortController();
       const url = `https://api.weather.gov/alerts/active?point=${c.lat},${c.lon}`;
@@ -706,7 +710,7 @@ export default function Page() {
       setAlerts(items);
       setLoadingAlerts(false);
     } catch {
-      setAlertError("Weather alerts are currently unavailable. Try again later.");
+      setAlerts([]);
       setLoadingAlerts(false);
     }
   }
@@ -822,9 +826,7 @@ export default function Page() {
                   navigator.clipboard.writeText(window.location.href);
                   setCopied(true);
                   setTimeout(() => setCopied(false), 1600);
-                } catch {
-                  /* no-op */
-                }
+                } catch {}
               }}
               className="hidden md:inline-flex items-center gap-2 rounded-xl ring-1 ring-white/10 px-3 py-2 hover:bg-white/5"
               aria-label="Copy share link"
@@ -835,11 +837,19 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Geolocation notice */}
+        {/* Geolocation banners */}
         {geoError && (
           <div className="mx-auto max-w-6xl px-4 pb-3 -mt-2">
             <div className="rounded-xl bg-rose-500/10 ring-1 ring-rose-400/30 px-3 py-2 text-rose-100 text-sm" role="status" aria-live="polite">
               {geoError}
+            </div>
+          </div>
+        )}
+        {geoNotice && (
+          <div className="mx-auto max-w-6xl px-4 pb-3 -mt-2">
+            <div className="flex items-center gap-2 rounded-xl bg-sky-500/10 ring-1 ring-sky-400/30 px-3 py-2 text-sky-100 text-sm">
+              <Info className="h-4 w-4" />
+              <span>{geoNotice}</span>
             </div>
           </div>
         )}
@@ -982,7 +992,6 @@ export default function Page() {
                     <Metric icon={<Wind className="h-4 w-4" />} label="Wind" value={formatWind(current.windSpeed, unit)} />
                     <Metric icon={<Wind className="h-4 w-4" />} label="Gusts" value={formatWind(current.windGust, unit)} />
                   </div>
-                  {error && <p className="mt-2 text-sm text-rose-300">{error}</p>}
                 </div>
               ) : (
                 <Empty label="No data" />
@@ -1079,8 +1088,6 @@ export default function Page() {
               </div>
               {loadingAlerts ? (
                 <Skeleton lines={6} />
-              ) : alertError ? (
-                <p className="text-sm text-rose-300">{alertError}</p>
               ) : alerts.length === 0 ? (
                 <p className="text-sm text-slate-200">No active alerts for this location.</p>
               ) : (
