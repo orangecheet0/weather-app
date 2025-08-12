@@ -249,10 +249,12 @@ function MapPanel({
 
   return (
     <>
+      {/* Inline map (taller by default) */}
       <div
         className={clsx("relative rounded-xl overflow-hidden", "bg-black/20 ring-1 ring-white/10", className)}
         style={{ height: "640px" }}
       >
+        {/* controls */}
         <div className="absolute right-3 top-3 z-10 flex gap-2">
           <a
             href={href}
@@ -274,9 +276,12 @@ function MapPanel({
             Expand
           </button>
         </div>
+
+        {/* map */}
         <div className="absolute inset-0">{frame}</div>
       </div>
 
+      {/* Full-screen modal */}
       {full && (
         <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm" role="dialog" aria-modal="true">
           <button
@@ -376,18 +381,21 @@ export default function Page() {
       const lat = parseFloat(latStr);
       const lon = parseFloat(lonStr);
       if (Number.isFinite(lat) && Number.isFinite(lon)) {
-        setCoords({ lat, lon });
-        reverseLookup({ lat, lon });
+        const c = { lat, lon };
+        setCoords(c);
+        reverseLookup(c);
         return;
       }
     }
 
-    // 2) Try geolocation automatically (some browsers require user gesture; if it fails, we show a button)
-    requestGeolocation(false).catch(() => {
-      // If automatic attempt fails (timeout/permission), we’ll fall back and show controls.
-      setCoords({ lat: DEFAULT_CITY.lat, lon: DEFAULT_CITY.lon });
-      setActivePlace({ name: DEFAULT_CITY.name, admin1: DEFAULT_CITY.admin1, country: DEFAULT_CITY.country });
-    });
+    // 2) Try geolocation; if it doesn't succeed, fallback to default
+    (async () => {
+      const ok = await requestGeolocation(false);
+      if (!ok) {
+        setCoords({ lat: DEFAULT_CITY.lat, lon: DEFAULT_CITY.lon });
+        setActivePlace({ name: DEFAULT_CITY.name, admin1: DEFAULT_CITY.admin1, country: DEFAULT_CITY.country });
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -514,18 +522,18 @@ export default function Page() {
     }
   }
 
-  // Robust geolocation with retries and clear errors
-  async function requestGeolocation(userInitiated: boolean) {
+  // Robust geolocation: returns true/false so we can fallback cleanly
+  async function requestGeolocation(userInitiated: boolean): Promise<boolean> {
     if (!window.isSecureContext) {
       setGeoError("Location requires HTTPS. Please use https://alweather.org");
-      return;
+      return false;
     }
     if (!navigator.geolocation) {
       setGeoError("Your browser doesn’t support location.");
-      return;
+      return false;
     }
 
-    return new Promise<void>((resolve) => {
+    return new Promise<boolean>((resolve) => {
       setGeoLoading(true);
       setGeoError(null);
 
@@ -535,7 +543,7 @@ export default function Page() {
         reverseLookup(c);
         setGeoLoading(false);
         setGeoError(null);
-        resolve();
+        resolve(true);
       };
 
       const finalFail = (err: GeolocationPositionError) => {
@@ -545,7 +553,7 @@ export default function Page() {
             setGeoError(
               userInitiated
                 ? "Location permission denied. Enable it in your browser settings for alweather.org."
-                : "We couldn’t access your location. Click “Use my location” and allow permission."
+                : "We couldn’t access your location. Tap “Use my location” and allow permission."
             );
             break;
           case err.POSITION_UNAVAILABLE:
@@ -555,17 +563,16 @@ export default function Page() {
           default:
             setGeoError("Timed out getting location. Try again.");
         }
-        resolve();
+        resolve(false);
       };
 
-      const firstOpts: PositionOptions = { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }; // use cached if recent
-      const secondOpts: PositionOptions = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }; // retry
+      const firstOpts: PositionOptions = { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 };
+      const secondOpts: PositionOptions = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
 
       navigator.geolocation.getCurrentPosition(
         success,
         (err) => {
           if (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE) {
-            // retry once with high accuracy
             navigator.geolocation.getCurrentPosition(success, finalFail, secondOpts);
           } else {
             finalFail(err);
@@ -773,9 +780,15 @@ export default function Page() {
               </button>
             </form>
 
-            {/* Use my location (manual trigger helps Safari/iOS show the prompt) */}
+            {/* Use my location */}
             <button
-              onClick={() => requestGeolocation(true)}
+              onClick={async () => {
+                const ok = await requestGeolocation(true);
+                if (!ok && !coords) {
+                  setCoords({ lat: DEFAULT_CITY.lat, lon: DEFAULT_CITY.lon });
+                  setActivePlace({ name: DEFAULT_CITY.name, admin1: DEFAULT_CITY.admin1, country: DEFAULT_CITY.country });
+                }
+              }}
               className="inline-flex items-center gap-2 rounded-xl ring-1 ring-white/10 px-3 py-2 hover:bg-white/5"
               aria-label="Use my location"
               disabled={geoLoading}
@@ -847,7 +860,8 @@ export default function Page() {
 
       {/* Hero */}
       <section className="mx-auto max-w-6xl px-4 pt-8">
-        <div className="relative overflow-hidden rounded-3xl ring-1 ring-white/10 bg白/5 bg-white/5">
+        <div className="relative overflow-hidden rounded-3xl ring-1 ring-white/10 bg-white/5">
+          {/* subtle motion aura */}
           <div className="absolute inset-0 pointer-events-none">
             <motion.div
               className="absolute -top-24 -left-24 h-72 w-72 rounded-full blur-3xl"
