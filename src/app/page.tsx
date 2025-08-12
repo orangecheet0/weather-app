@@ -116,7 +116,7 @@ function shortTime(iso: string) {
 }
 
 function weatherIcon(code: number | null) {
-  // Compact mapping for Open-Meteo weather codes
+  // Open-Meteo weather codes (compact mapping)
   if (code == null) return <Cloud className="h-6 w-6" aria-hidden />;
   if ([0].includes(code)) return <Sun className="h-6 w-6" aria-hidden />; // Clear
   if ([1, 2, 3].includes(code)) return <Cloud className="h-6 w-6" aria-hidden />; // Partly/Cloudy
@@ -131,7 +131,6 @@ function weatherIcon(code: number | null) {
 function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
   const { lat, lon } = coords;
   const temp = unit === "imperial" ? "F" : "C";
-  // Windy expects "km/h" (slash is fine; URLSearchParams will encode it).
   const wind = unit === "imperial" ? "mph" : "km/h";
   const params = new URLSearchParams({
     lat: String(lat),
@@ -179,6 +178,33 @@ function pickTheme(code: number | null | undefined, isoTime?: string): ThemeKey 
   if (night) return "clearNight";
   if ([1, 2, 3, 45, 48].includes(code)) return "cloudy";
   return "clearDay";
+}
+
+/* ===== US state helpers for "City, State" search disambiguation ===== */
+
+const US_STATE_ABBR_TO_NAME: Record<string, string> = {
+  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
+  CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia",
+  HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
+  KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland",
+  MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri",
+  MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
+  NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio",
+  OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
+  SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont",
+  VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
+  DC: "District of Columbia", PR: "Puerto Rico",
+};
+
+function norm(s: string) {
+  return s.replace(/\./g, "").trim().toLowerCase();
+}
+function resolveStateName(input: string): string | null {
+  if (!input) return null;
+  const abbr = input.trim().toUpperCase();
+  if (US_STATE_ABBR_TO_NAME[abbr]) return US_STATE_ABBR_TO_NAME[abbr];
+  const full = Object.values(US_STATE_ABBR_TO_NAME).find((n) => norm(n) === norm(input));
+  return full || null;
 }
 
 /* =========================
@@ -397,24 +423,87 @@ export default function Page() {
     }
   }
 
+  // Submit handler so Enter key works
+  function onSubmitSearch(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    runSearch();
+  }
+
+  // City, State aware search
   async function runSearch() {
-    const q = query.trim();
-    if (!q) return;
+    const raw = query.trim();
+    if (!raw) return;
+
     try {
       setError(null);
       ctrlGeo.current?.abort();
       ctrlGeo.current = new AbortController();
-      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=en&format=json`;
+
+      // Parse "City, ST" or "City, State Name"
+      let city = raw;
+      let desiredState: string | null = null;
+
+      const commaIdx = raw.indexOf(",");
+      if (commaIdx > -1) {
+        city = raw.slice(0, commaIdx).trim();
+        const statePart = raw.slice(commaIdx + 1).trim();
+        desiredState = resolveStateName(statePart);
+      } else {
+        // Allow "City ST" or "City State"
+        const parts = raw.split(/\s+/);
+        if (parts.length >= 2) {
+          const maybeState = parts[parts.length - 1];
+          const resolved = resolveStateName(maybeState);
+          if (resolved) {
+            desiredState = resolved;
+            city = parts.slice(0, -1).join(" ");
+          }
+        }
+      }
+
+      // Ask for multiple candidates; we’ll pick the best
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
+        city
+      )}&count=10&language=en&format=json`;
       const res = await fetch(url, { signal: ctrlGeo.current.signal });
       if (!res.ok) throw new Error("Search failed");
       const data = await res.json();
-      const first = data?.results?.[0];
-      if (!first) {
-        setError('No matches. Try a city + state, like "Huntsville, AL".');
+
+      type GeoResult = {
+        name: string;
+        latitude: number;
+        longitude: number;
+        country_code?: string;
+        country?: string;
+        admin1?: string; // state/province
+        population?: number | null;
+      };
+
+      const results: GeoResult[] = Array.isArray(data?.results) ? data.results : [];
+      if (results.length === 0) {
+        setError(`No matches. Try a city + state, like "Huntsville, AL".`);
         return;
       }
-      setActivePlace({ name: first.name, admin1: first.admin1, country: first.country_code });
-      setCoords({ lat: first.latitude, lon: first.longitude });
+
+      // Prefer US results
+      const us = results.filter((r) => r.country_code === "US");
+
+      let pick: GeoResult | undefined;
+      if (desiredState) {
+        const pool = us.length ? us : results;
+        const stateMatches = pool.filter((r) => norm(r.admin1 || "") === norm(desiredState as string));
+        pick = stateMatches.sort((a, b) => (b.population ?? 0) - (a.population ?? 0))[0];
+        if (!pick) {
+          setError(`No city "${city}" found in ${desiredState}.`);
+          return;
+        }
+      } else {
+        // No state given: choose the most populous US match, or fallback to global
+        pick = (us.length ? us : results).sort((a, b) => (b.population ?? 0) - (a.population ?? 0))[0];
+      }
+
+      setActivePlace({ name: pick.name, admin1: pick.admin1, country: pick.country_code });
+      setCoords({ lat: pick.latitude, lon: pick.longitude });
     } catch (e) {
       const message = e instanceof Error ? e.message : "Search error";
       setError(message);
@@ -599,24 +688,29 @@ export default function Page() {
           </motion.div>
 
           <div className="ml-auto flex items-center gap-2 w-full max-w-xl">
-            <label htmlFor="city" className="sr-only">
-              Search city
-            </label>
-            <input
-              id="city"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && runSearch()}
-              placeholder="Search city (e.g., Huntsville, AL)"
-              className="w-full rounded-xl bg-slate-900/60 ring-1 ring-white/10 px-3 py-2 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
-            />
-            <button
-              onClick={runSearch}
-              aria-label="Search"
-              className="inline-flex items-center justify-center rounded-xl ring-1 ring-white/10 px-3 py-2 hover:bg-white/5"
-            >
-              <Search className="h-5 w-5" aria-hidden />
-            </button>
+            {/* Search form – Enter submits */}
+            <form onSubmit={onSubmitSearch} className="flex items-center gap-2 w-full">
+              <label htmlFor="city" className="sr-only">
+                Search city
+              </label>
+              <input
+                id="city"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search city (e.g., Huntsville, AL)"
+                className="w-full rounded-xl bg-slate-900/60 ring-1 ring-white/10 px-3 py-2 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
+              <button
+                type="submit"
+                aria-label="Search"
+                disabled={!query.trim()}
+                className="inline-flex items-center justify-center rounded-xl ring-1 ring-white/10 px-3 py-2 hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Search className="h-5 w-5" aria-hidden />
+              </button>
+            </form>
+
+            {/* Unit toggle (outside form so it doesn't submit) */}
             <div role="group" aria-label="Unit" className="hidden sm:flex rounded-xl overflow-hidden ring-1 ring-white/10">
               <button
                 onClick={() => setUnit("imperial")}
@@ -633,6 +727,8 @@ export default function Page() {
                 °C / km/h
               </button>
             </div>
+
+            {/* Share */}
             <button
               onClick={() => {
                 try {
@@ -999,7 +1095,8 @@ function chipColor(sev?: string) {
 function ClockIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
-      <path fill="currentColor"
+      <path
+        fill="currentColor"
         d="M12 1.75A10.25 10.25 0 1 0 22.25 12 10.262 10.262 0 0 0 12 1.75Zm.75 5a.75.75 0 0 0-1.5 0v5.19l-3.1 1.79a.75.75 0 1 0 .75 1.3l3.35-1.94A.75.75 0 0 0 12.75 12Z"
       />
     </svg>
