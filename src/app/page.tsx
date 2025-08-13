@@ -536,6 +536,7 @@ export default function Page() {
     if (!coords) return;
 
     async function fetchWeatherData() {
+      if (!coords) return;
       setIsLoading(true);
       setError(null);
       
@@ -544,7 +545,7 @@ export default function Page() {
       fetchControllerRef.current = new AbortController();
       
       try {
-        const res = await fetch(`/api/weather?lat=${coords!.lat}&lon=${coords!.lon}&unit=${unit}`, {
+        const res = await fetch(`/api/weather?lat=${coords.lat}&lon=${coords.lon}&unit=${unit}`, {
           signal: fetchControllerRef.current.signal,
         });
 
