@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { openWeather } from '../openWeather';
+import { openWeather, clearCaches } from '../openWeather';
 
 const originalApiKey = process.env.OPENWEATHER_API_KEY;
 
@@ -10,6 +10,7 @@ afterEach(() => {
   } else {
     process.env.OPENWEATHER_API_KEY = originalApiKey;
   }
+  clearCaches();
 });
 
 describe('openWeather', () => {
@@ -32,6 +33,33 @@ describe('openWeather', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data).toEqual({ temp: 22 });
+  });
+
+  it('serves cached data on subsequent requests', async () => {
+    process.env.OPENWEATHER_API_KEY = 'test-key';
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ lat: 10, lon: 20 }]), { status: 200 })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ temp: 22 }), { status: 200 })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const req = new Request('https://example.com/api?city=Paris&unit=metric');
+    const res1 = await openWeather('weather', req);
+    expect(res1.status).toBe(200);
+
+    // Second call should use cache
+    const res2 = await openWeather('weather', req);
+    expect(res2.status).toBe(200);
+
+    // fetch should have been called only twice total (geocode + first weather fetch)
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const data2 = await res2.json();
+    expect(data2).toEqual({ temp: 22 });
   });
 
   it('returns 400 when city is missing', async () => {
