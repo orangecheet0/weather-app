@@ -42,7 +42,6 @@ export async function GET(request: Request) {
       console.error('OneCall response is not JSON:', contentType);
       return NextResponse.json({ message: 'Invalid API response' }, { status: 500 });
     }
-    console.log('OneCall response status:', response.status);
     const data = await response.json();
     if (response.ok) {
       return NextResponse.json<OneCallResponse>(data);

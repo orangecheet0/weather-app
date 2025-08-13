@@ -220,7 +220,7 @@ const US_STATE_ABBR_TO_NAME: Record<string, string> = {
   MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
   NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio",
   OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
-  SD: "South Carolina", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont",
+  SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont",
   VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
   DC: "District of Columbia", PR: "Puerto Rico",
 };
@@ -556,8 +556,8 @@ export default function Page() {
         const data: WeatherData = await res.json();
         setWeatherData(data);
 
-      } catch (err: any) {
-        if (err.name !== 'AbortError') {
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== 'AbortError') {
           setError(err.message);
         }
       } finally {
@@ -610,8 +610,9 @@ export default function Page() {
       setCoords(c);
       setError(null);
 
-    } catch (e: any) {
-      setError(e.message || "Search error");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Search error";
+      setError(message);
     }
   }
   
