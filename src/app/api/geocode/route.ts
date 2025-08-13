@@ -11,10 +11,17 @@ interface GeocodeResponse {
 }
 
 export async function GET(request: Request) {
+  const apiKey = process.env.OPENWEATHER_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json(
+      { message: 'API key not configured' },
+      { status: 500 }
+    );
+  }
+
   const { searchParams } = new URL(request.url);
   const lat = searchParams.get('lat');
   const lon = searchParams.get('lon');
-  const apiKey = process.env.OPENWEATHER_API_KEY;
 
   // Existing validation for missing lat/lon
   if (!lat || !lon) {
