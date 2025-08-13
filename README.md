@@ -1,43 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AlWeather
 
-## Getting Started
+AlWeather is a responsive weather dashboard built with Next.js and TypeScript. It retrieves data from the OpenWeather APIs and presents current conditions, forecasts, and alerts with a polished UI.
 
-First, copy `.env.example` to `.env` and set the required environment variables:
+## Features
+- Search for any city worldwide or use your browser's location.
+- View current weather, hourly forecasts, and a 7‑day outlook.
+- See severe weather alerts when issued for your area.
+- Toggle between Fahrenheit and Celsius units.
+- Animated and accessible interface styled with Tailwind CSS.
 
+## Tech Stack
+- [Next.js](https://nextjs.org/) + React
+- TypeScript
+- Tailwind CSS
+- Framer Motion and Lucide icons
+- OpenWeather APIs for weather and geocoding data
+
+## Setup
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) 18 or later
+- An OpenWeather API key
+
+### Environment variables
+1. Sign up for a free account at [OpenWeather](https://openweathermap.org/) and generate an API key from the **API keys** section of your dashboard.
+2. Copy the example environment file and provide your key:
+   ```bash
+   cp .env.example .env
+   # open .env in an editor and set
+   OPENWEATHER_API_KEY=<your_openweather_api_key>
+   ```
+
+### Install dependencies and run
 ```bash
-cp .env.example .env
-# update OPENWEATHER_API_KEY with your OpenWeather credentials
-```
-
-Then, run the development server:
-
-```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
+The app will be available at [http://localhost:3000](http://localhost:3000).
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Running tests
+```bash
+npm test
+```
