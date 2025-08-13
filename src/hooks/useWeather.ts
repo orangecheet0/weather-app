@@ -75,6 +75,7 @@ export function useWeather() {
     if (!coords) return;
 
     async function fetchWeatherData() {
+      if (!coords) return;
       setIsLoading(true);
       setError(null);
 
