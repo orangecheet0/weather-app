@@ -10,6 +10,10 @@ export async function GET(request: Request) {
     const lat = searchParams.get("lat");
     const lon = searchParams.get("lon");
     const unit = searchParams.get("unit") || "imperial";
+    const validUnits = ["imperial", "metric", "standard"];
+    if (!validUnits.includes(unit)) {
+      return NextResponse.json({ message: "Invalid unit" }, { status: 400 });
+    }
 
     // If we don't have lat or lon, return an error
     if (!lat || !lon) {
