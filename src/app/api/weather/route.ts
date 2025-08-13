@@ -1,6 +1,8 @@
 // This file is a Next.js API Route. It runs on the server, not in the browser.
 import { NextResponse } from "next/server";
 
+const validUnits = ["imperial", "metric", "standard"];
+
 // We define an async function for GET requests.
 // When you fetch '/api/weather', this function will run.
 export async function GET(request: Request) {
@@ -10,6 +12,9 @@ export async function GET(request: Request) {
     const lat = searchParams.get("lat");
     const lon = searchParams.get("lon");
     const unit = searchParams.get("unit") || "imperial";
+    if (!validUnits.includes(unit)) {
+      return NextResponse.json({ error: "Invalid unit" }, { status: 400 });
+    }
 
     // If we don't have lat or lon, return an error
     if (!lat || !lon) {
