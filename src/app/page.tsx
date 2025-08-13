@@ -399,6 +399,7 @@ function MapPanel({ coords, unit, className }: { coords: Coords; unit: Unit; cla
       className="h-full w-full rounded-xl border border-white/10 shadow-xl"
       loading="lazy"
       referrerPolicy="no-referrer-when-downgrade"
+      allow="geolocation"
     />
   );
 
@@ -447,6 +448,7 @@ function MapPanel({ coords, unit, className }: { coords: Coords; unit: Unit; cla
                 className="h-full w-full"
                 loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
+                allow="geolocation"
               />
             </div>
           </div>
