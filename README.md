@@ -2,7 +2,14 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+First, copy `.env.example` to `.env` and set the required environment variables:
+
+```bash
+cp .env.example .env
+# update OPENWEATHER_API_KEY with your OpenWeather credentials
+```
+
+Then, run the development server:
 
 ```bash
 npm run dev
