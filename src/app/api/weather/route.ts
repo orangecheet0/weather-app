@@ -32,6 +32,9 @@ export async function GET(request: Request) {
       alerts: alertsResponse,
     });
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return NextResponse.json({ error: "Weather data request timed out" }, { status: 504 });
+    }
     console.error("Error in weather API route:", error);
     // If anything goes wrong, send a generic server error response
     return NextResponse.json({ error: "Failed to fetch weather data" }, { status: 500 });
@@ -59,7 +62,7 @@ async function fetchForecast(lat: string, lon: string, unit: string) {
   });
 
   const url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
 
   if (!res.ok) {
     throw new Error("Failed to fetch forecast data from Open-Meteo");
@@ -72,7 +75,10 @@ async function fetchForecast(lat: string, lon: string, unit: string) {
 async function fetchAlerts(lat: string, lon: string) {
   try {
     const url = `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
-    const res = await fetch(url, { headers: { Accept: "application/geo+json" } });
+    const res = await fetch(url, {
+      headers: { Accept: "application/geo+json" },
+      signal: AbortSignal.timeout(5000),
+    });
 
     if (!res.ok) {
       console.warn("Could not fetch alerts from weather.gov");
@@ -83,6 +89,9 @@ async function fetchAlerts(lat: string, lon: string) {
     // We only need the 'features' array from the response
     return Array.isArray(data?.features) ? data.features : [];
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
     console.warn("Error fetching alerts:", error);
     return []; // Return empty array on any error
   }
