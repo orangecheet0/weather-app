@@ -217,7 +217,7 @@ const US_STATE_ABBR_TO_NAME: Record<string, string> = {
   HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
   KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland",
   MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri",
-  MT: "Montana", NE: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
+  MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
   NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio",
   OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
   SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont",
@@ -480,14 +480,12 @@ export default function Page() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
   
-  // NEW: State to show search loading
   const [isSearching, setIsSearching] = useState(false);
 
   const fetchControllerRef = useRef<AbortController | null>(null);
 
   // --- API CALLS (Client-side Geocoding) ---
 
-  // NEW: Refactored navigation function
   const navigateToLocation = (loc: LocationState, shouldPush: boolean) => {
     const usp = new URLSearchParams();
     usp.set("lat", String(loc.coords.lat.toFixed(4)));
@@ -510,10 +508,9 @@ export default function Page() {
       const name = j.city || j.locality || "Your area";
       const newLocation = { coords: c, name, admin1: j.principalSubdivision, country: j.countryCode };
       setLocation(newLocation);
-      navigateToLocation(newLocation, !isInitialLoad); // Uses the new function
+      navigateToLocation(newLocation, !isInitialLoad);
     } catch (e: unknown) {
       console.error("Reverse geocoding error:", e);
-      // Fallback to coordinates-only location if reverse lookup fails
       const newLocation = { coords: c, name: "Unknown location" };
       setLocation(newLocation);
       navigateToLocation(newLocation, !isInitialLoad);
@@ -522,40 +519,45 @@ export default function Page() {
 
   async function runSearch(query: string) {
     const raw = query.trim();
-    if (!raw) return;
+    if (!raw) {
+      return;
+    }
 
-    setIsSearching(true); // NEW: Set search loading state
+    setIsSearching(true);
     setGlobalError(null);
     setWeatherData(null);
 
     try {
-      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(raw)}&count=1&language=en&format=json`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Search failed.");
+      const bdcUrl = `https://api.bigdatacloud.net/data/city-geocoding-autocomplete?query=${encodeURIComponent(raw)}&limit=1&localityLanguage=en`;
+      const res = await fetch(bdcUrl);
+
+      if (!res.ok) {
+        throw new Error("Geocoding search failed. Please try again later.");
+      }
       const data = await res.json();
 
       const result = data?.results?.[0];
+
       if (!result) {
-        setGlobalError(`No matches for "${raw}".`);
-        setIsSearching(false); // NEW: Clear search loading
-        setIsLoading(false);
+        setGlobalError(`No matches found for "${raw}". Please try a different query.`);
         return;
       }
 
       const newLocation = {
         coords: { lat: result.latitude, lon: result.longitude },
-        name: result.name,
-        admin1: result.admin1,
-        country: result.country_code,
+        name: result.city,
+        admin1: result.principalSubdivision,
+        country: result.countryCode,
       };
 
       setLocation(newLocation);
-      navigateToLocation(newLocation, true); // NEW: Always push for new searches
+      navigateToLocation(newLocation, true);
+
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Search error";
       setGlobalError(message);
     } finally {
-      setIsSearching(false); // NEW: Clear search loading
+      setIsSearching(false);
       setIsLoading(false);
     }
   }
@@ -573,7 +575,7 @@ export default function Page() {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-          reverseLookup(c, true); // Mark as initial load
+          reverseLookup(c, true);
           setGeoLoading(false);
           resolve(true);
         },
@@ -652,7 +654,6 @@ export default function Page() {
       const isGeoSuccess = await requestGeolocation();
       if (!isGeoSuccess) {
         setLocation(DEFAULT_CITY);
-        // NEW: Initial load, so use replace for the default city
         navigateToLocation(DEFAULT_CITY, false); 
       }
     })();
@@ -711,7 +712,6 @@ export default function Page() {
                 placeholder="Search any city..."
                 className="w-full rounded-lg bg-slate-900/60 px-3 py-1.5 placeholder:text-slate-400 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
-              {/* NEW: Spinner inside the search bar */}
               {isSearching && (
                 <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-sky-300" />
               )}
