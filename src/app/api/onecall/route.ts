@@ -11,11 +11,18 @@ interface OneCallResponse {
 }
 
 export async function GET(request: Request) {
+  const apiKey = process.env.OPENWEATHER_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json(
+      { message: 'API key not configured' },
+      { status: 500 }
+    );
+  }
+
   const { searchParams } = new URL(request.url);
   const lat = searchParams.get('lat');
   const lon = searchParams.get('lon');
   const unit = searchParams.get('unit') || 'imperial'; // Default to imperial
-  const apiKey = process.env.OPENWEATHER_API_KEY;
 
   if (!lat || !lon) {
     return NextResponse.json({ message: 'Latitude and longitude are required' }, { status: 400 });

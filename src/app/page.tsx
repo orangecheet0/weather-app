@@ -565,7 +565,49 @@ export default function Page() {
     usp.set("lat", String(location.coords.lat.toFixed(4)));
     usp.set("lon", String(location.coords.lon.toFixed(4)));
     router.replace(`?${usp.toString()}`, { scroll: false });
-  }, [location, unit, router]);
+  }, [coords, router]);
+
+  // Main data fetching effect
+  useEffect(() => {
+    if (!coords) return;
+
+    async function fetchWeatherData() {
+      setIsLoading(true);
+      setError(null);
+      
+      // Abort previous request if it's still running
+      fetchControllerRef.current?.abort();
+      fetchControllerRef.current = new AbortController();
+      
+      try {
+        const res = await fetch(`/api/weather?lat=${coords!.lat}&lon=${coords!.lon}&unit=${unit}`, {
+          signal: fetchControllerRef.current.signal,
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || "Failed to fetch data.");
+        }
+
+        const data: WeatherData = await res.json();
+        setWeatherData(data);
+
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          setError(err.message);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchWeatherData();
+
+    // Cleanup function to abort on component unmount
+    return () => {
+      fetchControllerRef.current?.abort();
+    };
+  }, [coords, unit]);
 
 
   // --- API CALLS (Client-side Geocoding) ---
