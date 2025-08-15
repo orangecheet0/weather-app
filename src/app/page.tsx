@@ -460,47 +460,88 @@ function MapPanel({ coords, unit, className }: { coords: Coords; unit: Unit; cla
    Main Page Component
    ========================= */
 
+interface LocationState {
+  coords: Coords;
+  name: string;
+  admin1?: string;
+  country?: string;
+}
+
 export default function Page() {
   const router = useRouter();
 
   // --- STATE MANAGEMENT ---
   const [unit, setUnit] = useState<Unit>("imperial");
   const [query, setQuery] = useState("");
-  const [activePlace, setActivePlace] = useState<{ name: string; admin1?: string; country?: string } | null>(null);
-  const [coords, setCoords] = useState<Coords | null>(null);
-
-  // A single state for all fetched weather data
+  const [location, setLocation] = useState<LocationState | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
 
   // A single loading state and a single error state
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [globalError, setGlobalError] = useState<string | null>(null);
 
-  // Geolocation specific loading/error states
+  // Geolocation specific loading state
   const [geoLoading, setGeoLoading] = useState(false);
-  const [geoError, setGeoError] = useState<string | null>(null);
-  
+
   // Abort controller for fetch requests
   const fetchControllerRef = useRef<AbortController | null>(null);
 
   // --- SIDE EFFECTS ---
 
-  // Load initial state from localStorage and URL
+  // Main data fetching effect
+  useEffect(() => {
+    if (!location) return;
+
+    async function fetchAllData() {
+      setIsLoading(true);
+      setGlobalError(null);
+
+      fetchControllerRef.current?.abort();
+      fetchControllerRef.current = new AbortController();
+
+      try {
+        const res = await fetch(`/api/weather?lat=${location.coords.lat}&lon=${location.coords.lon}&unit=${unit}`, {
+          signal: fetchControllerRef.current.signal,
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || "Failed to fetch weather data.");
+        }
+
+        const data: WeatherData = await res.json();
+        setWeatherData(data);
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          setGlobalError(err.message);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchAllData();
+
+    return () => {
+      fetchControllerRef.current?.abort();
+    };
+  }, [location, unit]);
+
+  // Load initial state from localStorage and URL, and handle location
   useEffect(() => {
     const savedUnit = localStorage.getItem("weatherUnit");
     if (savedUnit === "metric" || savedUnit === "imperial") {
       setUnit(savedUnit);
     }
-    
+
     const usp = new URLSearchParams(window.location.search);
     const latStr = usp.get("lat");
     const lonStr = usp.get("lon");
-    
+
     if (latStr && lonStr) {
       const lat = parseFloat(latStr);
       const lon = parseFloat(lonStr);
       if (Number.isFinite(lat) && Number.isFinite(lon)) {
-        setCoords({ lat, lon });
         reverseLookup({ lat, lon });
         return;
       }
@@ -508,70 +549,23 @@ export default function Page() {
 
     // Fallback to geolocation, then to default
     (async () => {
-      const ok = await requestGeolocation(false);
-      if (!ok) {
-        setCoords(DEFAULT_CITY);
-        setActivePlace(DEFAULT_CITY);
+      const isGeoSuccess = await requestGeolocation();
+      if (!isGeoSuccess) {
+        setLocation(DEFAULT_CITY);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Save unit to localStorage when it changes
+  // Save unit to localStorage and update URL when location changes
   useEffect(() => {
     localStorage.setItem("weatherUnit", unit);
-  }, [unit]);
-  
-  // Keep URL shareable and up-to-date
-  useEffect(() => {
-    if (!coords) return;
+    if (!location) return;
     const usp = new URLSearchParams();
-    usp.set("lat", String(coords.lat.toFixed(4)));
-    usp.set("lon", String(coords.lon.toFixed(4)));
+    usp.set("lat", String(location.coords.lat.toFixed(4)));
+    usp.set("lon", String(location.coords.lon.toFixed(4)));
     router.replace(`?${usp.toString()}`, { scroll: false });
-  }, [coords, router]);
-
-  // Main data fetching effect
-  useEffect(() => {
-    if (!coords) return;
-
-    async function fetchWeatherData() {
-      setIsLoading(true);
-      setError(null);
-      
-      // Abort previous request if it's still running
-      fetchControllerRef.current?.abort();
-      fetchControllerRef.current = new AbortController();
-      
-      try {
-        const res = await fetch(`/api/weather?lat=${coords!.lat}&lon=${coords!.lon}&unit=${unit}`, {
-          signal: fetchControllerRef.current.signal,
-        });
-
-        if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.error || "Failed to fetch data.");
-        }
-
-        const data: WeatherData = await res.json();
-        setWeatherData(data);
-
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name !== 'AbortError') {
-          setError(err.message);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    fetchWeatherData();
-
-    // Cleanup function to abort on component unmount
-    return () => {
-      fetchControllerRef.current?.abort();
-    };
-  }, [coords, unit]);
+  }, [location, unit, router]);
 
 
   // --- API CALLS (Client-side Geocoding) ---
@@ -580,12 +574,13 @@ export default function Page() {
     try {
       const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${c.lat}&longitude=${c.lon}&localityLanguage=en`;
       const res = await fetch(url);
-      if (!res.ok) throw new Error("reverse geocode failed");
+      if (!res.ok) throw new Error("Reverse geocode failed.");
       const j = await res.json();
       const name = j.city || j.locality || "Your area";
-      setActivePlace({ name, admin1: j.principalSubdivision, country: j.countryCode });
-    } catch {
-      // ignore; coords are still usable
+      setLocation({ coords: c, name, admin1: j.principalSubdivision, country: j.countryCode });
+    } catch (e: unknown) {
+      console.error("Reverse geocoding error:", e);
+      setLocation({ coords: c, name: "Unknown location" });
     }
   }
 
@@ -593,68 +588,77 @@ export default function Page() {
     const raw = query.trim();
     if (!raw) return;
 
+    setIsLoading(true);
+    setGlobalError(null);
+    setWeatherData(null); // Clear previous data
+
     try {
       const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(raw)}&count=1&language=en&format=json`;
       const res = await fetch(url);
-      if (!res.ok) throw new Error("Search failed");
+      if (!res.ok) throw new Error("Search failed.");
       const data = await res.json();
 
       const result = data?.results?.[0];
       if (!result) {
-        setError(`No matches for "${raw}".`);
+        setGlobalError(`No matches for "${raw}".`);
+        setIsLoading(false);
         return;
       }
-      
-      const c = { lat: result.latitude, lon: result.longitude };
-      setActivePlace({ name: result.name, admin1: result.admin1, country: result.country_code });
-      setCoords(c);
-      setError(null);
 
+      const newLocation = {
+        coords: { lat: result.latitude, lon: result.longitude },
+        name: result.name,
+        admin1: result.admin1,
+        country: result.country_code,
+      };
+
+      setLocation(newLocation);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Search error";
-      setError(message);
+      setGlobalError(message);
+      setIsLoading(false);
     }
   }
-  
-  async function requestGeolocation(userInitiated: boolean): Promise<boolean> {
-     if (!navigator.geolocation) {
-       setGeoError("Your browser doesn’t support location.");
-       return false;
-     }
 
-     setGeoLoading(true);
-     setGeoError(null);
+  async function requestGeolocation(): Promise<boolean> {
+    if (!navigator.geolocation) {
+      setGlobalError("Your browser doesn’t support location.");
+      return false;
+    }
 
-     return new Promise((resolve) => {
-       navigator.geolocation.getCurrentPosition(
-         (pos) => {
-           const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-           setCoords(c);
-           reverseLookup(c);
-           setGeoLoading(false);
-           resolve(true);
-         },
-         (err) => {
-           setGeoError("Could not get location. Please enable it in your browser settings.");
-           setGeoLoading(false);
-           resolve(false);
-         },
-         { timeout: 10000 }
-       );
-     });
-   }
+    setGeoLoading(true);
+    setGlobalError(null);
+
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          reverseLookup(c); // This will set the location
+          setGeoLoading(false);
+          resolve(true);
+        },
+        (err) => {
+          console.error("Geolocation error:", err);
+          setGlobalError("Could not get location. Please enable it in your browser settings.");
+          setGeoLoading(false);
+          resolve(false);
+        },
+        { timeout: 10000 }
+      );
+    });
+  }
 
   // --- DERIVED STATE ---
   const placeLabel = useMemo(() => {
-    if (!activePlace) return "Loading location...";
-    return [activePlace.name, activePlace.admin1].filter(Boolean).join(", ");
-  }, [activePlace]);
+    if (!location) return "Loading location...";
+    return [location.name, location.admin1].filter(Boolean).join(", ");
+  }, [location]);
 
   const themeKey = useMemo<ThemeKey>(
     () => pickTheme(weatherData?.current?.weather_code ?? null, weatherData?.current?.time),
     [weatherData]
   );
-  
+
   // --- RENDER ---
   return (
     <div className={clsx("relative min-h-screen text-slate-100 selection:bg-sky-300/40 bg-gradient-to-br transition-colors duration-1000", THEMES[themeKey])}>
@@ -683,7 +687,7 @@ export default function Page() {
               AlWeather
             </span>
           </motion.div>
-          
+
           <div className="ml-auto flex w-full max-w-md items-center gap-2">
             <form onSubmit={(e) => { e.preventDefault(); runSearch(query); }} className="w-full">
               <input
@@ -693,16 +697,16 @@ export default function Page() {
                 className="w-full rounded-lg bg-slate-900/60 px-3 py-1.5 placeholder:text-slate-400 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
             </form>
-             <button
-                onClick={() => requestGeolocation(true)}
-                className="inline-flex items-center justify-center rounded-lg p-2 ring-1 ring-white/10 hover:bg-white/5 disabled:opacity-50"
-                aria-label="Use my location"
-                disabled={geoLoading}
-              >
-                {geoLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <LocateFixed className="h-5 w-5" />}
-              </button>
+            <button
+              onClick={() => requestGeolocation()}
+              className="inline-flex items-center justify-center rounded-lg p-2 ring-1 ring-white/10 hover:bg-white/5 disabled:opacity-50"
+              aria-label="Use my location"
+              disabled={geoLoading}
+            >
+              {geoLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <LocateFixed className="h-5 w-5" />}
+            </button>
           </div>
-          
+
           <div role="group" className="flex overflow-hidden rounded-lg ring-1 ring-white/10">
             <button onClick={() => setUnit("imperial")} className={clsx("px-3 py-1.5 text-sm", unit === "imperial" ? "bg-sky-600" : "hover:bg-white/5")}>°F</button>
             <button onClick={() => setUnit("metric")} className={clsx("px-3 py-1.5 text-sm", unit === "metric" ? "bg-sky-600" : "hover:bg-white/5")}>°C</button>
@@ -717,10 +721,10 @@ export default function Page() {
         </div>
 
         {/* --- Global Error Display --- */}
-        {error && (
+        {globalError && (
           <div className="mb-6 rounded-lg bg-red-900/50 p-4 text-center text-red-100 ring-1 ring-red-500/50">
             <p className="font-semibold">An error occurred:</p>
-            <p>{error}</p>
+            <p>{globalError}</p>
           </div>
         )}
 
@@ -732,7 +736,7 @@ export default function Page() {
         )}
 
         {/* --- Weather Data Display --- */}
-        {!isLoading && weatherData && coords && (
+        {!isLoading && weatherData && location && (
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
             {/* Left Column (Current, Hourly, Alerts) */}
             <div className="space-y-8 lg:col-span-2">
@@ -744,7 +748,7 @@ export default function Page() {
             {/* Right Column (Daily, Map) */}
             <div className="space-y-8">
               <DailyForecast data={weatherData.daily} unit={unit} />
-              <MapPanel coords={coords} unit={unit} />
+              <MapPanel coords={location.coords} unit={unit} />
             </div>
           </div>
         )}
