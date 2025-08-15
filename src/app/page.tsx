@@ -217,7 +217,7 @@ const US_STATE_ABBR_TO_NAME: Record<string, string> = {
   HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
   KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland",
   MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri",
-  MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
+  MT: "Montana", NE: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
   NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio",
   OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
   SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont",
@@ -476,15 +476,117 @@ export default function Page() {
   const [location, setLocation] = useState<LocationState | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
 
-  // A single loading state and a single error state
   const [isLoading, setIsLoading] = useState(true);
   const [globalError, setGlobalError] = useState<string | null>(null);
-
-  // Geolocation specific loading state
   const [geoLoading, setGeoLoading] = useState(false);
+  
+  // NEW: State to show search loading
+  const [isSearching, setIsSearching] = useState(false);
 
-  // Abort controller for fetch requests
   const fetchControllerRef = useRef<AbortController | null>(null);
+
+  // --- API CALLS (Client-side Geocoding) ---
+
+  // NEW: Refactored navigation function
+  const navigateToLocation = (loc: LocationState, shouldPush: boolean) => {
+    const usp = new URLSearchParams();
+    usp.set("lat", String(loc.coords.lat.toFixed(4)));
+    usp.set("lon", String(loc.coords.lon.toFixed(4)));
+    const newUrl = `?${usp.toString()}`;
+
+    if (shouldPush) {
+      router.push(newUrl, { scroll: false });
+    } else {
+      router.replace(newUrl, { scroll: false });
+    }
+  };
+
+  async function reverseLookup(c: Coords, isInitialLoad = false) {
+    try {
+      const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${c.lat}&longitude=${c.lon}&localityLanguage=en`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Reverse geocode failed.");
+      const j = await res.json();
+      const name = j.city || j.locality || "Your area";
+      const newLocation = { coords: c, name, admin1: j.principalSubdivision, country: j.countryCode };
+      setLocation(newLocation);
+      navigateToLocation(newLocation, !isInitialLoad); // Uses the new function
+    } catch (e: unknown) {
+      console.error("Reverse geocoding error:", e);
+      // Fallback to coordinates-only location if reverse lookup fails
+      const newLocation = { coords: c, name: "Unknown location" };
+      setLocation(newLocation);
+      navigateToLocation(newLocation, !isInitialLoad);
+    }
+  }
+
+  async function runSearch(query: string) {
+    const raw = query.trim();
+    if (!raw) return;
+
+    setIsSearching(true); // NEW: Set search loading state
+    setGlobalError(null);
+    setWeatherData(null);
+
+    try {
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(raw)}&count=1&language=en&format=json`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Search failed.");
+      const data = await res.json();
+
+      const result = data?.results?.[0];
+      if (!result) {
+        setGlobalError(`No matches for "${raw}".`);
+        setIsSearching(false); // NEW: Clear search loading
+        setIsLoading(false);
+        return;
+      }
+
+      const newLocation = {
+        coords: { lat: result.latitude, lon: result.longitude },
+        name: result.name,
+        admin1: result.admin1,
+        country: result.country_code,
+      };
+
+      setLocation(newLocation);
+      navigateToLocation(newLocation, true); // NEW: Always push for new searches
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Search error";
+      setGlobalError(message);
+    } finally {
+      setIsSearching(false); // NEW: Clear search loading
+      setIsLoading(false);
+    }
+  }
+
+  async function requestGeolocation(): Promise<boolean> {
+    if (!navigator.geolocation) {
+      setGlobalError("Your browser doesn’t support location.");
+      return false;
+    }
+
+    setGeoLoading(true);
+    setGlobalError(null);
+
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          reverseLookup(c, true); // Mark as initial load
+          setGeoLoading(false);
+          resolve(true);
+        },
+        (err) => {
+          console.error("Geolocation error:", err);
+          setGlobalError("Could not get location. Please enable it in your browser settings.");
+          setGeoLoading(false);
+          resolve(false);
+        },
+        { timeout: 10000 }
+      );
+    });
+  }
 
   // --- SIDE EFFECTS ---
 
@@ -495,7 +597,6 @@ export default function Page() {
     async function fetchAllData() {
       setIsLoading(true);
       setGlobalError(null);
-
       fetchControllerRef.current?.abort();
       fetchControllerRef.current = new AbortController();
 
@@ -542,153 +643,25 @@ export default function Page() {
       const lat = parseFloat(latStr);
       const lon = parseFloat(lonStr);
       if (Number.isFinite(lat) && Number.isFinite(lon)) {
-        reverseLookup({ lat, lon });
+        reverseLookup({ lat, lon }, true);
         return;
       }
     }
 
-    // Fallback to geolocation, then to default
     (async () => {
       const isGeoSuccess = await requestGeolocation();
       if (!isGeoSuccess) {
         setLocation(DEFAULT_CITY);
+        // NEW: Initial load, so use replace for the default city
+        navigateToLocation(DEFAULT_CITY, false); 
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Save unit to localStorage and update URL when location changes
+  // Save unit to localStorage when it changes
   useEffect(() => {
     localStorage.setItem("weatherUnit", unit);
-    if (!location) return;
-    const usp = new URLSearchParams();
-    usp.set("lat", String(location.coords.lat.toFixed(4)));
-    usp.set("lon", String(location.coords.lon.toFixed(4)));
-    router.replace(`?${usp.toString()}`, { scroll: false });
-  }, [coords, router]);
-
-  // Main data fetching effect
-  useEffect(() => {
-    if (!coords) return;
-
-    async function fetchWeatherData() {
-      setIsLoading(true);
-      setError(null);
-      
-      // Abort previous request if it's still running
-      fetchControllerRef.current?.abort();
-      fetchControllerRef.current = new AbortController();
-      
-      try {
-        const res = await fetch(`/api/weather?lat=${coords!.lat}&lon=${coords!.lon}&unit=${unit}`, {
-          signal: fetchControllerRef.current.signal,
-        });
-
-        if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.error || "Failed to fetch data.");
-        }
-
-        const data: WeatherData = await res.json();
-        setWeatherData(data);
-
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name !== 'AbortError') {
-          setError(err.message);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    fetchWeatherData();
-
-    // Cleanup function to abort on component unmount
-    return () => {
-      fetchControllerRef.current?.abort();
-    };
-  }, [coords, unit]);
-
-
-  // --- API CALLS (Client-side Geocoding) ---
-
-  async function reverseLookup(c: Coords) {
-    try {
-      const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${c.lat}&longitude=${c.lon}&localityLanguage=en`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Reverse geocode failed.");
-      const j = await res.json();
-      const name = j.city || j.locality || "Your area";
-      setLocation({ coords: c, name, admin1: j.principalSubdivision, country: j.countryCode });
-    } catch (e: unknown) {
-      console.error("Reverse geocoding error:", e);
-      setLocation({ coords: c, name: "Unknown location" });
-    }
-  }
-
-  async function runSearch(query: string) {
-    const raw = query.trim();
-    if (!raw) return;
-
-    setIsLoading(true);
-    setGlobalError(null);
-    setWeatherData(null); // Clear previous data
-
-    try {
-      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(raw)}&count=1&language=en&format=json`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Search failed.");
-      const data = await res.json();
-
-      const result = data?.results?.[0];
-      if (!result) {
-        setGlobalError(`No matches for "${raw}".`);
-        setIsLoading(false);
-        return;
-      }
-
-      const newLocation = {
-        coords: { lat: result.latitude, lon: result.longitude },
-        name: result.name,
-        admin1: result.admin1,
-        country: result.country_code,
-      };
-
-      setLocation(newLocation);
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Search error";
-      setGlobalError(message);
-      setIsLoading(false);
-    }
-  }
-
-  async function requestGeolocation(): Promise<boolean> {
-    if (!navigator.geolocation) {
-      setGlobalError("Your browser doesn’t support location.");
-      return false;
-    }
-
-    setGeoLoading(true);
-    setGlobalError(null);
-
-    return new Promise((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-          reverseLookup(c); // This will set the location
-          setGeoLoading(false);
-          resolve(true);
-        },
-        (err) => {
-          console.error("Geolocation error:", err);
-          setGlobalError("Could not get location. Please enable it in your browser settings.");
-          setGeoLoading(false);
-          resolve(false);
-        },
-        { timeout: 10000 }
-      );
-    });
-  }
+  }, [unit]);
 
   // --- DERIVED STATE ---
   const placeLabel = useMemo(() => {
@@ -731,13 +704,17 @@ export default function Page() {
           </motion.div>
 
           <div className="ml-auto flex w-full max-w-md items-center gap-2">
-            <form onSubmit={(e) => { e.preventDefault(); runSearch(query); }} className="w-full">
+            <form onSubmit={(e) => { e.preventDefault(); runSearch(query); }} className="relative w-full">
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search any city..."
                 className="w-full rounded-lg bg-slate-900/60 px-3 py-1.5 placeholder:text-slate-400 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
+              {/* NEW: Spinner inside the search bar */}
+              {isSearching && (
+                <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-sky-300" />
+              )}
             </form>
             <button
               onClick={() => requestGeolocation()}
