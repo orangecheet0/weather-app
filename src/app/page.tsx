@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -12,13 +12,19 @@ import {
   CloudSnow,
   Droplets,
   Loader2,
+  MapPin,
+  Search,
   Sun,
-  Wind,
+  Thermometer,
   AlertTriangle,
+  Share2,
+  ArrowUp,
+  ArrowDown,
   ExternalLink,
   Maximize2,
   X,
   LocateFixed,
+  Info,
 } from "lucide-react";
 
 /* =========================
@@ -69,6 +75,20 @@ interface HourlyBlock {
   uv_index?: (number | null)[];
 }
 
+type NWSFeature = {
+  id?: string;
+  properties?: {
+    event?: string;
+    headline?: string;
+    severity?: string;
+    effective?: string;
+    ends?: string;
+    description?: string;
+    instruction?: string;
+    areaDesc?: string;
+  };
+};
+
 interface AlertItem {
   id: string;
   event: string;
@@ -112,18 +132,7 @@ function formatUV(uv: number | null | undefined) {
   return Math.round(uv).toString();
 }
 
-function formatHumidity(h: number | null | undefined) {
-  if (h === null || h === undefined || Number.isNaN(h)) return "—";
-  return `${Math.round(h)}%`;
-}
-
-function formatPrecip(p: number | null | undefined, unit: Unit) {
-  if (p === null || p === undefined || Number.isNaN(p)) return "—";
-  return `${p.toFixed(1)} ${unit === "imperial" ? "in" : "mm"}`;
-}
-
 function shortDate(isoOrYmd: string) {
-  if (!isoOrYmd) return "—";
   if (/^\d{4}-\d{2}-\d{2}$/.test(isoOrYmd)) {
     const [y, m, d] = isoOrYmd.split("-").map(Number);
     const dt = new Date(y, m - 1, d);
@@ -215,14 +224,9 @@ const US_STATE_ABBR_TO_NAME: Record<string, string> = {
   DC: "District of Columbia", PR: "Puerto Rico",
 };
 
-const US_STATE_NAME_TO_ABBR: Record<string, string> = Object.fromEntries(
-  Object.entries(US_STATE_ABBR_TO_NAME).map(([abbr, name]) => [norm(name), abbr])
-);
-
 function norm(s: string) {
   return s.replace(/\./g, "").trim().toLowerCase();
 }
-
 function resolveStateName(input: string): string | null {
   if (!input) return null;
   const abbr = input.trim().toUpperCase();
@@ -263,15 +267,11 @@ function CurrentWeatherCard({ data, unit }: { data: CurrentBlock; unit: Unit }) 
       <div className="mt-6 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
         <div className="flex items-center gap-2">
           <Droplets className="h-5 w-5 text-sky-300" />
-          <span>Humidity: {formatHumidity(data.relative_humidity_2m)}</span>
+          <span>Humidity: {data.relative_humidity_2m}%</span>
         </div>
         <div className="flex items-center gap-2">
           <Sun className="h-5 w-5 text-sky-300" />
           <span>UV Index: {formatUV(data.uv_index)}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <CloudRain className="h-5 w-5 text-sky-300" />
-          <span>Precip: {formatPrecip(data.precipitation, unit)}</span>
         </div>
       </div>
     </div>
@@ -280,25 +280,18 @@ function CurrentWeatherCard({ data, unit }: { data: CurrentBlock; unit: Unit }) 
 
 // --- Daily Forecast Display ---
 function DailyForecast({ data, unit }: { data: DailyBlock; unit: Unit }) {
-  if (data.time.length === 0) {
-    return <p className="text-center text-slate-400">No daily forecast data available.</p>;
-  }
-
   return (
     <div className="space-y-2">
       {data.time.map((t, i) => (
         <div
           key={t}
-          className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 rounded-lg bg-slate-900/30 p-2 px-3 ring-1 ring-white/10"
+          className="grid grid-cols-[1fr_auto_auto] items-center gap-4 rounded-lg bg-slate-900/30 p-2 px-3 ring-1 ring-white/10"
         >
           <div className="font-medium">{shortDate(t)}</div>
           <div className="flex items-center gap-2 text-slate-300">{weatherIcon(data.weather_code[i])}</div>
           <div className="flex items-center gap-2 font-medium">
             <span className="text-slate-300">{formatTemp(data.temperature_2m_min[i], unit)}</span>
             <span className="text-white">{formatTemp(data.temperature_2m_max[i], unit)}</span>
-          </div>
-          <div className="text-sm text-sky-300">
-            Precip: {formatPrecip(data.precipitation_sum[i], unit)} | UV: {formatUV(data.uv_index_max?.[i])}
           </div>
         </div>
       ))}
@@ -309,21 +302,14 @@ function DailyForecast({ data, unit }: { data: DailyBlock; unit: Unit }) {
 // --- Hourly Forecast Display ---
 function HourlyForecast({ data, unit }: { data: HourlyBlock; unit: Unit }) {
   const now = new Date();
-  let startIndex = data.time.findIndex((t) => new Date(t) > now);
-  if (startIndex === -1) startIndex = 0;
-  const hourlyData = data.time.slice(startIndex, startIndex + 24);
-
-  if (data.time.length === 0 || hourlyData.length === 0) {
-    return <p className="text-center text-slate-400">No hourly forecast data available.</p>;
-  }
+  const startIndex = data.time.findIndex((t) => new Date(t) > now);
 
   return (
     <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4">
-      {hourlyData.map((t, i) => (
+      {data.time.slice(startIndex, startIndex + 24).map((t, i) => (
         <div
           key={t}
           className="w-24 shrink-0 snap-start space-y-3 rounded-xl bg-slate-900/30 p-3 text-center ring-1 ring-white/10"
-          aria-label={`Forecast for ${shortTime(t)}: ${formatTemp(data.temperature_2m[startIndex + i], unit)}`}
         >
           <p className="text-sm font-medium">{shortTime(t)}</p>
           <div className="mx-auto flex h-6 w-6 items-center justify-center text-sky-300">
@@ -333,9 +319,6 @@ function HourlyForecast({ data, unit }: { data: HourlyBlock; unit: Unit }) {
           {data.precipitation_probability[startIndex + i] !== null && data.precipitation_probability[startIndex + i]! > 5 && (
             <p className="text-xs text-sky-300">{data.precipitation_probability[startIndex + i]}%</p>
           )}
-          {data.uv_index?.[startIndex + i] != null && (
-            <p className="text-xs text-yellow-300">UV: {formatUV(data.uv_index[startIndex + i])}</p>
-          )}
         </div>
       ))}
     </div>
@@ -343,8 +326,21 @@ function HourlyForecast({ data, unit }: { data: HourlyBlock; unit: Unit }) {
 }
 
 // --- Alerts Display ---
-function AlertsPanel({ alerts }: { alerts: AlertItem[] }) {
-  if (alerts.length === 0) {
+function AlertsPanel({ alerts }: { alerts: NWSFeature[] }) {
+  // Convert NWS Features to our internal AlertItem type
+  const alertItems: AlertItem[] = alerts.map((f: NWSFeature) => ({
+    id: f?.id || crypto.randomUUID(),
+    event: f?.properties?.event ?? "Alert",
+    headline: f?.properties?.headline,
+    severity: f?.properties?.severity,
+    effective: f?.properties?.effective,
+    ends: f?.properties?.ends,
+    description: f?.properties?.description,
+    instruction: f?.properties?.instruction,
+    areaDesc: f?.properties?.areaDesc,
+  }));
+
+  if (alertItems.length === 0) {
     return (
       <div className="rounded-xl bg-slate-900/40 p-6 text-center text-slate-300 ring-1 ring-white/10 backdrop-blur-sm">
         No active alerts for this area.
@@ -354,7 +350,7 @@ function AlertsPanel({ alerts }: { alerts: AlertItem[] }) {
 
   return (
     <div className="space-y-4">
-      {alerts.map((alert) => (
+      {alertItems.map((alert) => (
         <details
           key={alert.id}
           className="group cursor-pointer rounded-xl bg-yellow-900/20 p-4 ring-1 ring-yellow-500/50 backdrop-blur-sm"
@@ -362,7 +358,7 @@ function AlertsPanel({ alerts }: { alerts: AlertItem[] }) {
           <summary className="flex items-center justify-between text-lg font-semibold text-yellow-200">
             <div className="flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-yellow-400" />
-              {alert.event || "Alert"}
+              {alert.event}
             </div>
             <span className="text-sm font-normal text-yellow-300 transition-transform group-open:rotate-180">
               ▼
@@ -370,13 +366,6 @@ function AlertsPanel({ alerts }: { alerts: AlertItem[] }) {
           </summary>
           <div className="mt-4 space-y-4 border-t border-yellow-500/30 pt-4 text-yellow-200/90">
             <p className="font-semibold">{alert.headline}</p>
-            {alert.severity && <p>Severity: {alert.severity}</p>}
-            {alert.areaDesc && <p>Areas: {alert.areaDesc}</p>}
-            {(alert.effective || alert.ends) && (
-              <p>
-                From {shortDate(alert.effective ?? "")} to {shortDate(alert.ends ?? "")}
-              </p>
-            )}
             <p className="whitespace-pre-wrap">{alert.description}</p>
             {alert.instruction && <p className="whitespace-pre-wrap font-semibold">{alert.instruction}</p>}
           </div>
@@ -496,7 +485,7 @@ export default function Page() {
 
   // --- API CALLS (Client-side Geocoding) ---
 
-  const navigateToLocation = useCallback((loc: LocationState, shouldPush: boolean) => {
+  const navigateToLocation = (loc: LocationState, shouldPush: boolean) => {
     const usp = new URLSearchParams();
     usp.set("lat", String(loc.coords.lat.toFixed(4)));
     usp.set("lon", String(loc.coords.lon.toFixed(4)));
@@ -507,9 +496,9 @@ export default function Page() {
     } else {
       router.replace(newUrl, { scroll: false });
     }
-  }, [router]);
+  };
 
-  const reverseLookup = useCallback(async (c: Coords, isInitialLoad = false) => {
+  async function reverseLookup(c: Coords, isInitialLoad = false) {
     try {
       const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${c.lat}&longitude=${c.lon}&localityLanguage=en`;
       const res = await fetch(url);
@@ -525,10 +514,10 @@ export default function Page() {
       setLocation(newLocation);
       navigateToLocation(newLocation, !isInitialLoad);
     }
-  }, [navigateToLocation]);
+  }
 
-  const runSearch = useCallback(async (raw: string) => {
-    raw = raw.trim();
+  async function runSearch(query: string) {
+    const raw = query.trim();
     if (!raw) {
       return;
     }
@@ -537,43 +526,8 @@ export default function Page() {
     setGlobalError(null);
     setWeatherData(null);
 
-    let searchQuery = raw;
-    let city = raw;
-    let stateInput: string | undefined;
-
-    if (raw.includes(',')) {
-      const parts = raw.split(',').map(s => s.trim());
-      city = parts[0];
-      stateInput = parts[1];
-    } else {
-      const words = raw.trim().split(/\s+/);
-      if (words.length > 1) {
-        const last = words[words.length - 1];
-        const resolved = resolveStateName(last);
-        if (resolved) {
-          city = words.slice(0, -1).join(' ');
-          stateInput = last;
-        }
-      }
-    }
-
-    if (stateInput) {
-      const normalized = norm(stateInput);
-      const isAbbr = !!US_STATE_ABBR_TO_NAME[stateInput.toUpperCase()];
-      const isFull = !!US_STATE_NAME_TO_ABBR[normalized];
-      let stateCode: string;
-      if (isAbbr) {
-        stateCode = stateInput.toUpperCase();
-      } else if (isFull) {
-        stateCode = US_STATE_NAME_TO_ABBR[normalized];
-      } else {
-        stateCode = stateInput;
-      }
-      searchQuery = `${city}, ${stateCode}`;
-    }
-
     try {
-      const bdcUrl = `https://api.bigdatacloud.net/data/city-geocoding-autocomplete?query=${encodeURIComponent(searchQuery)}&limit=1&localityLanguage=en`;
+      const bdcUrl = `https://api.bigdatacloud.net/data/city-geocoding-autocomplete?query=${encodeURIComponent(raw)}&limit=1&localityLanguage=en`;
       const res = await fetch(bdcUrl);
 
       if (!res.ok) {
@@ -605,9 +559,9 @@ export default function Page() {
       setIsSearching(false);
       setIsLoading(false);
     }
-  }, [navigateToLocation]);
+  }
 
-  const requestGeolocation = useCallback(async (): Promise<boolean> => {
+  async function requestGeolocation(): Promise<boolean> {
     if (!navigator.geolocation) {
       setGlobalError("Your browser doesn’t support location.");
       return false;
@@ -633,15 +587,17 @@ export default function Page() {
         { timeout: 10000 }
       );
     });
-  }, [reverseLookup]);
+  }
 
   // --- SIDE EFFECTS ---
 
   // Main data fetching effect
   useEffect(() => {
-    if (!location) return;
-
     async function fetchAllData() {
+      // Add the guard clause here to ensure location is not null.
+      // This explicitly tells TypeScript that location is safe to use below.
+      if (!location) return;
+
       setIsLoading(true);
       setGlobalError(null);
       fetchControllerRef.current?.abort();
@@ -679,7 +635,7 @@ export default function Page() {
   useEffect(() => {
     const savedUnit = localStorage.getItem("weatherUnit");
     if (savedUnit === "metric" || savedUnit === "imperial") {
-      setUnit(savedUnit);
+      setUnit(savedUnit as Unit);
     }
 
     const usp = new URLSearchParams(window.location.search);
@@ -702,7 +658,7 @@ export default function Page() {
         navigateToLocation(DEFAULT_CITY, false); 
       }
     })();
-  }, [reverseLookup, requestGeolocation, navigateToLocation]);
+  }, []);
 
   // Save unit to localStorage when it changes
   useEffect(() => {
@@ -754,7 +710,7 @@ export default function Page() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search city, state/province (e.g., Huntsville, AL or Toronto, ON)..."
+                placeholder="Search any city..."
                 className="w-full rounded-lg bg-slate-900/60 px-3 py-1.5 placeholder:text-slate-400 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
               {isSearching && (
@@ -786,7 +742,7 @@ export default function Page() {
 
         {/* --- Global Error Display --- */}
         {globalError && (
-          <div className="mb-6 rounded-lg bg-red-900/50 p-4 text-center text-red-100 ring-1 ring-red-500/50" role="status">
+          <div className="mb-6 rounded-lg bg-red-900/50 p-4 text-center text-red-100 ring-1 ring-red-500/50">
             <p className="font-semibold">An error occurred:</p>
             <p>{globalError}</p>
           </div>
@@ -794,7 +750,7 @@ export default function Page() {
 
         {/* --- Loading Spinner --- */}
         {isLoading && (
-          <div className="flex h-64 items-center justify-center" role="status">
+          <div className="flex h-64 items-center justify-center">
             <Loader2 className="h-12 w-12 animate-spin text-sky-300" />
           </div>
         )}
