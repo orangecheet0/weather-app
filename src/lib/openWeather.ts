@@ -80,7 +80,6 @@ export async function openWeather(endpoint: Endpoint, request: Request) {
   }
 
   const url = `https://api.openweathermap.org/data/2.5/${endpoint}?lat=${coords.lat}&lon=${coords.lon}&appid=${apiKey}&units=${validatedUnit}`;
-
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
     const data = await response.json();
