@@ -12,24 +12,13 @@ import {
   CloudSnow,
   Droplets,
   Loader2,
-  MapPin,
-  Search,
   Sun,
-  Thermometer,
-  Wind,
   AlertTriangle,
-  Share2,
-  ArrowUp,
-  ArrowDown,
-  ExternalLink,
-  Maximize2,
-  X,
   LocateFixed,
-  Info,
 } from "lucide-react";
 
 /* =========================
-   Types (Slightly modified for new data structure)
+   Types
    ========================= */
 
 type Unit = "imperial" | "metric";
@@ -39,7 +28,13 @@ interface Coords {
   lon: number;
 }
 
-// This now holds all our weather data in one object
+interface LocationState {
+  coords: Coords;
+  name: string;
+  admin1?: string;
+  country?: string;
+}
+
 interface WeatherData {
   current: CurrentBlock;
   daily: DailyBlock;
@@ -103,7 +98,7 @@ interface AlertItem {
 }
 
 /* =========================
-   Helpers (Mostly unchanged)
+   Helpers
    ========================= */
 
 const DEFAULT_CITY = {
@@ -162,13 +157,14 @@ function weatherIcon(code: number | null) {
 
 function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
   const { lat, lon } = coords;
+  console.log("Windy map coords:", { lat, lon }); // Debug log
   const metricTemp = unit === "imperial" ? "°F" : "°C";
   const metricWind = unit === "imperial" ? "mph" : "km/h";
   const p = new URLSearchParams({
-    lat: String(lat),
-    lon: String(lon),
-    detailLat: String(lat),
-    detailLon: String(lon),
+    lat: lat.toFixed(6),
+    lon: lon.toFixed(6),
+    detailLat: lat.toFixed(6),
+    detailLon: lon.toFixed(6),
     zoom: String(zoom),
     level: "surface",
     overlay: "radar",
@@ -176,7 +172,7 @@ function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
     radarRange: "-1",
     menu: "",
     message: "",
-    marker: "",
+    marker: `${lat.toFixed(6)},${lon.toFixed(6)}`,
     pressure: "",
     detail: "",
     type: "map",
@@ -209,31 +205,6 @@ function pickTheme(code: number | null | undefined, isoTime?: string): ThemeKey 
   if (night) return "clearNight";
   if ([1, 2, 3, 45, 48].includes(code)) return "cloudy";
   return "clearDay";
-}
-
-const US_STATE_ABBR_TO_NAME: Record<string, string> = {
-  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
-  CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia",
-  HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
-  KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland",
-  MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri",
-  MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
-  NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio",
-  OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
-  SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont",
-  VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
-  DC: "District of Columbia", PR: "Puerto Rico",
-};
-
-function norm(s: string) {
-  return s.replace(/\./g, "").trim().toLowerCase();
-}
-function resolveStateName(input: string): string | null {
-  if (!input) return null;
-  const abbr = input.trim().toUpperCase();
-  if (US_STATE_ABBR_TO_NAME[abbr]) return US_STATE_ABBR_TO_NAME[abbr];
-  const full = Object.values(US_STATE_ABBR_TO_NAME).find((n) => norm(n) === norm(input));
-  return full || null;
 }
 
 /* =========================
@@ -328,144 +299,55 @@ function HourlyForecast({ data, unit }: { data: HourlyBlock; unit: Unit }) {
 
 // --- Alerts Display ---
 function AlertsPanel({ alerts }: { alerts: NWSFeature[] }) {
-  // Convert NWS Features to our internal AlertItem type
-  const alertItems: AlertItem[] = alerts.map((f: NWSFeature) => ({
-    id: f?.id || crypto.randomUUID(),
-    event: f?.properties?.event ?? "Alert",
-    headline: f?.properties?.headline,
-    severity: f?.properties?.severity,
-    effective: f?.properties?.effective,
-    ends: f?.properties?.ends,
-    description: f?.properties?.description,
-    instruction: f?.properties?.instruction,
-    areaDesc: f?.properties?.areaDesc,
-  }));
-
-  if (alertItems.length === 0) {
+  if (!alerts || alerts.length === 0) {
     return (
-      <div className="rounded-xl bg-slate-900/40 p-6 text-center text-slate-300 ring-1 ring-white/10 backdrop-blur-sm">
-        No active alerts for this area.
+      <div className="rounded-xl bg-slate-900/40 p-6 ring-1 ring-white/10 backdrop-blur-sm">
+        <p className="text-sm text-slate-300">No active weather alerts.</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      {alertItems.map((alert) => (
-        <details
+      <h2 className="text-lg font-semibold">Weather Alerts</h2>
+      {alerts.map((alert) => (
+        <div
           key={alert.id}
-          className="group cursor-pointer rounded-xl bg-yellow-900/20 p-4 ring-1 ring-yellow-500/50 backdrop-blur-sm"
+          className="rounded-xl bg-red-900/40 p-4 ring-1 ring-red-500/50"
         >
-          <summary className="flex items-center justify-between text-lg font-semibold text-yellow-200">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-yellow-400" />
-              {alert.event}
-            </div>
-            <span className="text-sm font-normal text-yellow-300 transition-transform group-open:rotate-180">
-              ▼
-            </span>
-          </summary>
-          <div className="mt-4 space-y-4 border-t border-yellow-500/30 pt-4 text-yellow-200/90">
-            <p className="font-semibold">{alert.headline}</p>
-            <p className="whitespace-pre-wrap">{alert.description}</p>
-            {alert.instruction && <p className="whitespace-pre-wrap font-semibold">{alert.instruction}</p>}
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-red-400" />
+            <h3 className="font-semibold text-red-100">{alert.properties?.event || "Alert"}</h3>
           </div>
-        </details>
+          <p className="mt-2 text-sm text-red-100">{alert.properties?.headline}</p>
+          <p className="mt-1 text-xs text-red-200">{alert.properties?.areaDesc}</p>
+          <p className="mt-2 text-sm text-red-100">{alert.properties?.description}</p>
+          {alert.properties?.instruction && (
+            <p className="mt-2 text-sm text-red-100">Instructions: {alert.properties.instruction}</p>
+          )}
+        </div>
       ))}
     </div>
   );
 }
 
-// --- Map Panel (Unchanged) ---
-function MapPanel({ coords, unit, className }: { coords: Coords; unit: Unit; className?: string }) {
-  const [full, setFull] = useState(false);
-  const hrefBase = useMemo(() => windyUrl(coords, unit, 8), [coords, unit]);
-  const frameKey = `${coords.lat.toFixed(5)}:${coords.lon.toFixed(5)}:${unit}`;
-  const href = `${hrefBase}&v=${encodeURIComponent(frameKey)}`;
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFull(false);
-    };
-    if (full) window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [full]);
-
-  const frame = (
-    <iframe
-      key={frameKey}
-      title="Radar Map"
-      src={href}
-      className="h-full w-full rounded-xl border border-white/10 shadow-xl"
-      loading="lazy"
-      referrerPolicy="no-referrer-when-downgrade"
-    />
-  );
-
+// --- Map Display ---
+function MapPanel({ coords, unit }: { coords: Coords; unit: Unit }) {
   return (
-    <>
-      <div
-        className={clsx("relative overflow-hidden rounded-xl", "bg-black/20 ring-1 ring-white/10", className)}
-        style={{ height: "640px" }}
-      >
-        <div className="absolute left-3 top-3 z-10 flex gap-2">
-          <a
-            href={href}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded-md bg-white/10 px-3 py-1.5 text-xs backdrop-blur hover:bg-white/20"
-            title="Open map in a new tab"
-          >
-            <ExternalLink className="h-4 w-4" /> New tab
-          </a>
-          <button
-            onClick={() => setFull(true)}
-            className="inline-flex items-center gap-1 rounded-md bg-white/10 px-3 py-1.5 text-xs backdrop-blur hover:bg-white/20"
-            title="Expand to full screen"
-            aria-expanded={full}
-          >
-            <Maximize2 className="h-4 w-4" /> Expand
-          </button>
-        </div>
-        <div className="absolute inset-0">{frame}</div>
-      </div>
-      {full && (
-        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm" role="dialog" aria-modal="true">
-          <button
-            onClick={() => setFull(false)}
-            className="absolute right-4 top-4 z-[101] inline-flex items-center gap-1 rounded-md bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20"
-            title="Close full-screen map"
-          >
-            <X className="h-4 w-4" /> Close
-          </button>
-          <div className="absolute inset-0 p-4 md:p-6 lg:p-8">
-            <div className="h-full w-full overflow-hidden rounded-2xl bg-black/40 ring-1 ring-white/10">
-              <iframe
-                key={`full-${frameKey}`}
-                title="Radar Map (Full Screen)"
-                src={href}
-                className="h-full w-full"
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    <div className="rounded-xl bg-slate-900/40 p-6 ring-1 ring-white/10 backdrop-blur-sm">
+      <h2 className="text-lg font-semibold mb-4">Weather Radar</h2>
+      <iframe
+        src={windyUrl(coords, unit)}
+        className="w-full h-64 rounded-lg"
+        title="Weather Radar Map"
+      />
+    </div>
   );
 }
 
 /* =========================
-   Main Page Component
+   Main Component
    ========================= */
-
-interface LocationState {
-  coords: Coords;
-  name: string;
-  admin1?: string;
-  country?: string;
-}
 
 export default function Page() {
   const router = useRouter();
@@ -475,11 +357,9 @@ export default function Page() {
   const [query, setQuery] = useState("");
   const [location, setLocation] = useState<LocationState | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
-
   const [isLoading, setIsLoading] = useState(true);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
-  
   const [isSearching, setIsSearching] = useState(false);
 
   const fetchControllerRef = useRef<AbortController | null>(null);
@@ -488,8 +368,8 @@ export default function Page() {
 
   const navigateToLocation = (loc: LocationState, shouldPush: boolean) => {
     const usp = new URLSearchParams();
-    usp.set("lat", String(loc.coords.lat.toFixed(4)));
-    usp.set("lon", String(loc.coords.lon.toFixed(4)));
+    usp.set("lat", loc.coords.lat.toFixed(4));
+    usp.set("lon", loc.coords.lon.toFixed(4));
     const newUrl = `?${usp.toString()}`;
 
     if (shouldPush) {
@@ -500,6 +380,7 @@ export default function Page() {
   };
 
   async function reverseLookup(c: Coords, isInitialLoad = false) {
+    console.log("Reverse lookup coords:", c); // Debug log
     try {
       const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${c.lat}&longitude=${c.lon}&localityLanguage=en`;
       const res = await fetch(url);
@@ -508,6 +389,7 @@ export default function Page() {
       const name = j.city || j.locality || "Your area";
       const newLocation = { coords: c, name, admin1: j.principalSubdivision, country: j.countryCode };
       setLocation(newLocation);
+      console.log("Set location:", newLocation); // Debug log
       navigateToLocation(newLocation, !isInitialLoad);
     } catch (e: unknown) {
       console.error("Reverse geocoding error:", e);
@@ -552,7 +434,6 @@ export default function Page() {
 
       setLocation(newLocation);
       navigateToLocation(newLocation, true);
-
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Search error";
       setGlobalError(message);
@@ -575,17 +456,22 @@ export default function Page() {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          console.log("Geolocation success:", { lat: c.lat, lon: c.lon, accuracy: pos.coords.accuracy }); // Debug log
+          if (pos.coords.accuracy > 1000) {
+            console.warn("Low geolocation accuracy:", pos.coords.accuracy);
+            setGlobalError("Location accuracy is low. Try enabling high-accuracy GPS or searching manually.");
+          }
           reverseLookup(c, true);
           setGeoLoading(false);
           resolve(true);
         },
         (err) => {
           console.error("Geolocation error:", err);
-          setGlobalError("Could not get location. Please enable it in your browser settings.");
+          setGlobalError("Could not get location. Please enable it in your browser settings or search manually.");
           setGeoLoading(false);
           resolve(false);
         },
-        { timeout: 10000 }
+        { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
       );
     });
   }
@@ -597,6 +483,7 @@ export default function Page() {
     if (!location) return;
 
     async function fetchAllData() {
+      if (!location?.coords) return; // Additional null check for TypeScript
       setIsLoading(true);
       setGlobalError(null);
       fetchControllerRef.current?.abort();
@@ -615,7 +502,7 @@ export default function Page() {
         const data: WeatherData = await res.json();
         setWeatherData(data);
       } catch (err: unknown) {
-        if (err instanceof Error && err.name !== 'AbortError') {
+        if (err instanceof Error && err.name !== "AbortError") {
           setGlobalError(err.message);
         }
       } finally {
@@ -654,10 +541,11 @@ export default function Page() {
       const isGeoSuccess = await requestGeolocation();
       if (!isGeoSuccess) {
         setLocation(DEFAULT_CITY);
-        navigateToLocation(DEFAULT_CITY, false); 
+        navigateToLocation(DEFAULT_CITY, false);
       }
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps for mount-only effect; suppress ESLint warning
 
   // Save unit to localStorage when it changes
   useEffect(() => {
