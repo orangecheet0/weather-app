@@ -109,4 +109,31 @@ describe('openWeather', () => {
     expect(data.message).toBe('Failed to fetch weather data');
     expect(data.details).toBe('Network failure');
   });
+
+  it.each([
+    'New York',
+    'São Paulo',
+  ])('encodes city names with spaces or special characters: %s', async (city) => {
+    process.env.OPENWEATHER_API_KEY = 'test-key';
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ lat: 10, lon: 20 }]), { status: 200 })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ temp: 22 }), { status: 200 })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const req = new Request(
+      `https://example.com/api?city=${encodeURIComponent(city)}&unit=metric`
+    );
+    const res = await openWeather('weather', req);
+
+    expect(res.status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(city)}&limit=1&appid=test-key`
+    );
+  });
 });

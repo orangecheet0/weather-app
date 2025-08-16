@@ -55,7 +55,7 @@ export async function openWeather(endpoint: Endpoint, request: Request) {
   const geoKey = city.toLowerCase();
   let coords = getCacheEntry(geocodeCache, geoKey);
   if (!coords) {
-    const geoUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${city}&limit=1&appid=${apiKey}`;
+    const geoUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(city)}&limit=1&appid=${apiKey}`;
     try {
       const geoResponse = await fetch(geoUrl, { signal: AbortSignal.timeout(5000) });
       const geoData = await geoResponse.json();
