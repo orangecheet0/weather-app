@@ -12,19 +12,12 @@ import {
   CloudSnow,
   Droplets,
   Loader2,
-  MapPin,
-  Search,
   Sun,
-  Thermometer,
   AlertTriangle,
-  Share2,
-  ArrowUp,
-  ArrowDown,
   ExternalLink,
   Maximize2,
   X,
   LocateFixed,
-  Info,
 } from "lucide-react";
 
 /* =========================
@@ -109,8 +102,10 @@ const DEFAULT_CITY = {
   name: "Huntsville",
   admin1: "Alabama",
   country: "US",
-  lat: 34.7304,
-  lon: -86.5861,
+  coords: {
+    lat: 34.7304,
+    lon: -86.5861,
+  },
 };
 
 function clsx(...parts: Array<string | false | null | undefined>) {
@@ -208,31 +203,6 @@ function pickTheme(code: number | null | undefined, isoTime?: string): ThemeKey 
   if (night) return "clearNight";
   if ([1, 2, 3, 45, 48].includes(code)) return "cloudy";
   return "clearDay";
-}
-
-const US_STATE_ABBR_TO_NAME: Record<string, string> = {
-  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
-  CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia",
-  HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
-  KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland",
-  MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri",
-  MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey",
-  NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio",
-  OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
-  SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont",
-  VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
-  DC: "District of Columbia", PR: "Puerto Rico",
-};
-
-function norm(s: string) {
-  return s.replace(/\./g, "").trim().toLowerCase();
-}
-function resolveStateName(input: string): string | null {
-  if (!input) return null;
-  const abbr = input.trim().toUpperCase();
-  if (US_STATE_ABBR_TO_NAME[abbr]) return US_STATE_ABBR_TO_NAME[abbr];
-  const full = Object.values(US_STATE_ABBR_TO_NAME).find((n) => norm(n) === norm(input));
-  return full || null;
 }
 
 /* =========================
@@ -632,6 +602,7 @@ export default function Page() {
   }, [location, unit]);
 
   // Load initial state from localStorage and URL, and handle location
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const savedUnit = localStorage.getItem("weatherUnit");
     if (savedUnit === "metric" || savedUnit === "imperial") {
