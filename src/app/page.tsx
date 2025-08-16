@@ -101,12 +101,11 @@ interface AlertItem {
    Helpers
    ========================= */
 
-const DEFAULT_CITY = {
+const DEFAULT_CITY: LocationState = {
   name: "Huntsville",
   admin1: "Alabama",
   country: "US",
-  lat: 34.7304,
-  lon: -86.5861,
+  coords: { lat: 34.7304, lon: -86.5861 },
 };
 
 function clsx(...parts: Array<string | false | null | undefined>) {
