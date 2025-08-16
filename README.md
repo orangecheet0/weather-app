@@ -42,3 +42,7 @@ The app will be available at [http://localhost:3000](http://localhost:3000).
 ```bash
 npm test
 ```
+
+## Deployment
+
+Some hosting providers do not yet support loading a `next.config.ts` file. If your deployment platform requires a JavaScript configuration, use the provided `next.config.mjs` which exports the same settings as the TypeScript file.
