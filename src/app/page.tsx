@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -12,20 +12,13 @@ import {
   CloudSnow,
   Droplets,
   Loader2,
-  MapPin,
-  Search,
   Sun,
-  Thermometer,
   Wind,
   AlertTriangle,
-  Share2,
-  ArrowUp,
-  ArrowDown,
   ExternalLink,
   Maximize2,
   X,
   LocateFixed,
-  Info,
 } from "lucide-react";
 
 /* =========================
@@ -126,10 +119,11 @@ function formatHumidity(h: number | null | undefined) {
 
 function formatPrecip(p: number | null | undefined, unit: Unit) {
   if (p === null || p === undefined || Number.isNaN(p)) return "—";
-  return `${Math.round(p ?? 0)} ${unit === "imperial" ? "in" : "mm"}`;
+  return `${p.toFixed(1)} ${unit === "imperial" ? "in" : "mm"}`;
 }
 
 function shortDate(isoOrYmd: string) {
+  if (!isoOrYmd) return "—";
   if (/^\d{4}-\d{2}-\d{2}$/.test(isoOrYmd)) {
     const [y, m, d] = isoOrYmd.split("-").map(Number);
     const dt = new Date(y, m - 1, d);
@@ -221,6 +215,10 @@ const US_STATE_ABBR_TO_NAME: Record<string, string> = {
   DC: "District of Columbia", PR: "Puerto Rico",
 };
 
+const US_STATE_NAME_TO_ABBR: Record<string, string> = Object.fromEntries(
+  Object.entries(US_STATE_ABBR_TO_NAME).map(([abbr, name]) => [norm(name), abbr])
+);
+
 function norm(s: string) {
   return s.replace(/\./g, "").trim().toLowerCase();
 }
@@ -282,6 +280,10 @@ function CurrentWeatherCard({ data, unit }: { data: CurrentBlock; unit: Unit }) 
 
 // --- Daily Forecast Display ---
 function DailyForecast({ data, unit }: { data: DailyBlock; unit: Unit }) {
+  if (data.time.length === 0) {
+    return <p className="text-center text-slate-400">No daily forecast data available.</p>;
+  }
+
   return (
     <div className="space-y-2">
       {data.time.map((t, i) => (
@@ -309,10 +311,15 @@ function HourlyForecast({ data, unit }: { data: HourlyBlock; unit: Unit }) {
   const now = new Date();
   let startIndex = data.time.findIndex((t) => new Date(t) > now);
   if (startIndex === -1) startIndex = 0;
+  const hourlyData = data.time.slice(startIndex, startIndex + 24);
+
+  if (data.time.length === 0 || hourlyData.length === 0) {
+    return <p className="text-center text-slate-400">No hourly forecast data available.</p>;
+  }
 
   return (
     <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4">
-      {data.time.slice(startIndex, startIndex + 24).map((t, i) => (
+      {hourlyData.map((t, i) => (
         <div
           key={t}
           className="w-24 shrink-0 snap-start space-y-3 rounded-xl bg-slate-900/30 p-3 text-center ring-1 ring-white/10"
@@ -489,7 +496,7 @@ export default function Page() {
 
   // --- API CALLS (Client-side Geocoding) ---
 
-  const navigateToLocation = (loc: LocationState, shouldPush: boolean) => {
+  const navigateToLocation = useCallback((loc: LocationState, shouldPush: boolean) => {
     const usp = new URLSearchParams();
     usp.set("lat", String(loc.coords.lat.toFixed(4)));
     usp.set("lon", String(loc.coords.lon.toFixed(4)));
@@ -500,9 +507,9 @@ export default function Page() {
     } else {
       router.replace(newUrl, { scroll: false });
     }
-  };
+  }, [router]);
 
-  async function reverseLookup(c: Coords, isInitialLoad = false) {
+  const reverseLookup = useCallback(async (c: Coords, isInitialLoad = false) => {
     try {
       const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${c.lat}&longitude=${c.lon}&localityLanguage=en`;
       const res = await fetch(url);
@@ -518,9 +525,9 @@ export default function Page() {
       setLocation(newLocation);
       navigateToLocation(newLocation, !isInitialLoad);
     }
-  }
+  }, [navigateToLocation]);
 
-  async function runSearch(raw: string) {
+  const runSearch = useCallback(async (raw: string) => {
     raw = raw.trim();
     if (!raw) {
       return;
@@ -551,8 +558,18 @@ export default function Page() {
     }
 
     if (stateInput) {
-      const resolvedState = resolveStateName(stateInput) ?? stateInput;
-      searchQuery = `${city} ${resolvedState}`;
+      const normalized = norm(stateInput);
+      const isAbbr = !!US_STATE_ABBR_TO_NAME[stateInput.toUpperCase()];
+      const isFull = !!US_STATE_NAME_TO_ABBR[normalized];
+      let stateCode: string;
+      if (isAbbr) {
+        stateCode = stateInput.toUpperCase();
+      } else if (isFull) {
+        stateCode = US_STATE_NAME_TO_ABBR[normalized];
+      } else {
+        stateCode = stateInput;
+      }
+      searchQuery = `${city}, ${stateCode}`;
     }
 
     try {
@@ -588,9 +605,9 @@ export default function Page() {
       setIsSearching(false);
       setIsLoading(false);
     }
-  }
+  }, [navigateToLocation]);
 
-  async function requestGeolocation(): Promise<boolean> {
+  const requestGeolocation = useCallback(async (): Promise<boolean> => {
     if (!navigator.geolocation) {
       setGlobalError("Your browser doesn’t support location.");
       return false;
@@ -616,7 +633,7 @@ export default function Page() {
         { timeout: 10000 }
       );
     });
-  }
+  }, [reverseLookup]);
 
   // --- SIDE EFFECTS ---
 
@@ -685,7 +702,7 @@ export default function Page() {
         navigateToLocation(DEFAULT_CITY, false); 
       }
     })();
-  }, []);
+  }, [reverseLookup, requestGeolocation, navigateToLocation]);
 
   // Save unit to localStorage when it changes
   useEffect(() => {
@@ -737,7 +754,7 @@ export default function Page() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search city, state (e.g. Huntsville, AL)..."
+                placeholder="Search city, state/province (e.g., Huntsville, AL or Toronto, ON)..."
                 className="w-full rounded-lg bg-slate-900/60 px-3 py-1.5 placeholder:text-slate-400 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
               {isSearching && (
