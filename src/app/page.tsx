@@ -410,7 +410,7 @@ export default function Page() {
     setWeatherData(null);
 
     try {
-      const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY;
+      const apiKey = process.env.OPENWEATHER_API_KEY;
       if (!apiKey) {
         throw new Error("OpenWeatherMap API key is missing. Please contact support.");
       }
