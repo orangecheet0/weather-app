@@ -339,6 +339,7 @@ function MapPanel({ coords, unit }: { coords: Coords; unit: Unit }) {
         src={windyUrl(coords, unit)}
         className="w-full h-64 rounded-lg"
         title="Weather Radar Map"
+        allow="geolocation"
       />
     </div>
   );
@@ -444,7 +445,7 @@ export default function Page() {
 
   async function requestGeolocation(): Promise<boolean> {
     if (!navigator.geolocation) {
-      setGlobalError("Your browser doesn’t support location.");
+      setGlobalError("Your browser doesn’t support geolocation. Please search for a city manually.");
       return false;
     }
 
@@ -466,7 +467,11 @@ export default function Page() {
         },
         (err) => {
           console.error("Geolocation error:", err);
-          setGlobalError("Could not get location. Please enable it in your browser settings or search manually.");
+          let errorMessage = "Could not get location. Please enable it in your browser settings or search manually.";
+          if (err.message.includes("Permissions policy")) {
+            errorMessage = "Geolocation is blocked by a permissions policy. Please enable location access in your browser settings or search manually.";
+          }
+          setGlobalError(errorMessage);
           setGeoLoading(false);
           resolve(false);
         },
