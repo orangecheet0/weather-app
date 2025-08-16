@@ -76,20 +76,6 @@ interface HourlyBlock {
   uv_index?: (number | null)[];
 }
 
-type NWSFeature = {
-  id?: string;
-  properties?: {
-    event?: string;
-    headline?: string;
-    severity?: string;
-    effective?: string;
-    ends?: string;
-    description?: string;
-    instruction?: string;
-    areaDesc?: string;
-  };
-};
-
 interface AlertItem {
   id: string;
   event: string;
@@ -131,6 +117,16 @@ function formatWind(w: number | null | undefined, unit: Unit) {
 function formatUV(uv: number | null | undefined) {
   if (uv === null || uv === undefined || Number.isNaN(uv)) return "—";
   return Math.round(uv).toString();
+}
+
+function formatHumidity(h: number | null | undefined) {
+  if (h === null || h === undefined || Number.isNaN(h)) return "—";
+  return `${Math.round(h)}%`;
+}
+
+function formatPrecip(p: number | null | undefined, unit: Unit) {
+  if (p === null || p === undefined || Number.isNaN(p)) return "—";
+  return `${Math.round(p ?? 0)} ${unit === "imperial" ? "in" : "mm"}`;
 }
 
 function shortDate(isoOrYmd: string) {
@@ -228,6 +224,7 @@ const US_STATE_ABBR_TO_NAME: Record<string, string> = {
 function norm(s: string) {
   return s.replace(/\./g, "").trim().toLowerCase();
 }
+
 function resolveStateName(input: string): string | null {
   if (!input) return null;
   const abbr = input.trim().toUpperCase();
@@ -268,11 +265,15 @@ function CurrentWeatherCard({ data, unit }: { data: CurrentBlock; unit: Unit }) 
       <div className="mt-6 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
         <div className="flex items-center gap-2">
           <Droplets className="h-5 w-5 text-sky-300" />
-          <span>Humidity: {data.relative_humidity_2m}%</span>
+          <span>Humidity: {formatHumidity(data.relative_humidity_2m)}</span>
         </div>
         <div className="flex items-center gap-2">
           <Sun className="h-5 w-5 text-sky-300" />
           <span>UV Index: {formatUV(data.uv_index)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <CloudRain className="h-5 w-5 text-sky-300" />
+          <span>Precip: {formatPrecip(data.precipitation, unit)}</span>
         </div>
       </div>
     </div>
@@ -286,13 +287,16 @@ function DailyForecast({ data, unit }: { data: DailyBlock; unit: Unit }) {
       {data.time.map((t, i) => (
         <div
           key={t}
-          className="grid grid-cols-[1fr_auto_auto] items-center gap-4 rounded-lg bg-slate-900/30 p-2 px-3 ring-1 ring-white/10"
+          className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 rounded-lg bg-slate-900/30 p-2 px-3 ring-1 ring-white/10"
         >
           <div className="font-medium">{shortDate(t)}</div>
           <div className="flex items-center gap-2 text-slate-300">{weatherIcon(data.weather_code[i])}</div>
           <div className="flex items-center gap-2 font-medium">
             <span className="text-slate-300">{formatTemp(data.temperature_2m_min[i], unit)}</span>
             <span className="text-white">{formatTemp(data.temperature_2m_max[i], unit)}</span>
+          </div>
+          <div className="text-sm text-sky-300">
+            Precip: {formatPrecip(data.precipitation_sum[i], unit)} | UV: {formatUV(data.uv_index_max?.[i])}
           </div>
         </div>
       ))}
@@ -303,7 +307,8 @@ function DailyForecast({ data, unit }: { data: DailyBlock; unit: Unit }) {
 // --- Hourly Forecast Display ---
 function HourlyForecast({ data, unit }: { data: HourlyBlock; unit: Unit }) {
   const now = new Date();
-  const startIndex = data.time.findIndex((t) => new Date(t) > now);
+  let startIndex = data.time.findIndex((t) => new Date(t) > now);
+  if (startIndex === -1) startIndex = 0;
 
   return (
     <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4">
@@ -311,6 +316,7 @@ function HourlyForecast({ data, unit }: { data: HourlyBlock; unit: Unit }) {
         <div
           key={t}
           className="w-24 shrink-0 snap-start space-y-3 rounded-xl bg-slate-900/30 p-3 text-center ring-1 ring-white/10"
+          aria-label={`Forecast for ${shortTime(t)}: ${formatTemp(data.temperature_2m[startIndex + i], unit)}`}
         >
           <p className="text-sm font-medium">{shortTime(t)}</p>
           <div className="mx-auto flex h-6 w-6 items-center justify-center text-sky-300">
@@ -320,6 +326,9 @@ function HourlyForecast({ data, unit }: { data: HourlyBlock; unit: Unit }) {
           {data.precipitation_probability[startIndex + i] !== null && data.precipitation_probability[startIndex + i]! > 5 && (
             <p className="text-xs text-sky-300">{data.precipitation_probability[startIndex + i]}%</p>
           )}
+          {data.uv_index?.[startIndex + i] != null && (
+            <p className="text-xs text-yellow-300">UV: {formatUV(data.uv_index[startIndex + i])}</p>
+          )}
         </div>
       ))}
     </div>
@@ -327,21 +336,8 @@ function HourlyForecast({ data, unit }: { data: HourlyBlock; unit: Unit }) {
 }
 
 // --- Alerts Display ---
-function AlertsPanel({ alerts }: { alerts: NWSFeature[] }) {
-  // Convert NWS Features to our internal AlertItem type
-  const alertItems: AlertItem[] = alerts.map((f: NWSFeature) => ({
-    id: f?.id || crypto.randomUUID(),
-    event: f?.properties?.event ?? "Alert",
-    headline: f?.properties?.headline,
-    severity: f?.properties?.severity,
-    effective: f?.properties?.effective,
-    ends: f?.properties?.ends,
-    description: f?.properties?.description,
-    instruction: f?.properties?.instruction,
-    areaDesc: f?.properties?.areaDesc,
-  }));
-
-  if (alertItems.length === 0) {
+function AlertsPanel({ alerts }: { alerts: AlertItem[] }) {
+  if (alerts.length === 0) {
     return (
       <div className="rounded-xl bg-slate-900/40 p-6 text-center text-slate-300 ring-1 ring-white/10 backdrop-blur-sm">
         No active alerts for this area.
@@ -351,7 +347,7 @@ function AlertsPanel({ alerts }: { alerts: NWSFeature[] }) {
 
   return (
     <div className="space-y-4">
-      {alertItems.map((alert) => (
+      {alerts.map((alert) => (
         <details
           key={alert.id}
           className="group cursor-pointer rounded-xl bg-yellow-900/20 p-4 ring-1 ring-yellow-500/50 backdrop-blur-sm"
@@ -359,7 +355,7 @@ function AlertsPanel({ alerts }: { alerts: NWSFeature[] }) {
           <summary className="flex items-center justify-between text-lg font-semibold text-yellow-200">
             <div className="flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-yellow-400" />
-              {alert.event}
+              {alert.event || "Alert"}
             </div>
             <span className="text-sm font-normal text-yellow-300 transition-transform group-open:rotate-180">
               ▼
@@ -367,6 +363,13 @@ function AlertsPanel({ alerts }: { alerts: NWSFeature[] }) {
           </summary>
           <div className="mt-4 space-y-4 border-t border-yellow-500/30 pt-4 text-yellow-200/90">
             <p className="font-semibold">{alert.headline}</p>
+            {alert.severity && <p>Severity: {alert.severity}</p>}
+            {alert.areaDesc && <p>Areas: {alert.areaDesc}</p>}
+            {(alert.effective || alert.ends) && (
+              <p>
+                From {shortDate(alert.effective ?? "")} to {shortDate(alert.ends ?? "")}
+              </p>
+            )}
             <p className="whitespace-pre-wrap">{alert.description}</p>
             {alert.instruction && <p className="whitespace-pre-wrap font-semibold">{alert.instruction}</p>}
           </div>
@@ -517,8 +520,8 @@ export default function Page() {
     }
   }
 
-  async function runSearch(query: string) {
-    const raw = query.trim();
+  async function runSearch(raw: string) {
+    raw = raw.trim();
     if (!raw) {
       return;
     }
@@ -527,8 +530,33 @@ export default function Page() {
     setGlobalError(null);
     setWeatherData(null);
 
+    let searchQuery = raw;
+    let city = raw;
+    let stateInput: string | undefined;
+
+    if (raw.includes(',')) {
+      const parts = raw.split(',').map(s => s.trim());
+      city = parts[0];
+      stateInput = parts[1];
+    } else {
+      const words = raw.trim().split(/\s+/);
+      if (words.length > 1) {
+        const last = words[words.length - 1];
+        const resolved = resolveStateName(last);
+        if (resolved) {
+          city = words.slice(0, -1).join(' ');
+          stateInput = last;
+        }
+      }
+    }
+
+    if (stateInput) {
+      const resolvedState = resolveStateName(stateInput) ?? stateInput;
+      searchQuery = `${city} ${resolvedState}`;
+    }
+
     try {
-      const bdcUrl = `https://api.bigdatacloud.net/data/city-geocoding-autocomplete?query=${encodeURIComponent(raw)}&limit=1&localityLanguage=en`;
+      const bdcUrl = `https://api.bigdatacloud.net/data/city-geocoding-autocomplete?query=${encodeURIComponent(searchQuery)}&limit=1&localityLanguage=en`;
       const res = await fetch(bdcUrl);
 
       if (!res.ok) {
@@ -709,7 +737,7 @@ export default function Page() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search any city..."
+                placeholder="Search city, state (e.g. Huntsville, AL)..."
                 className="w-full rounded-lg bg-slate-900/60 px-3 py-1.5 placeholder:text-slate-400 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
               {isSearching && (
@@ -741,7 +769,7 @@ export default function Page() {
 
         {/* --- Global Error Display --- */}
         {globalError && (
-          <div className="mb-6 rounded-lg bg-red-900/50 p-4 text-center text-red-100 ring-1 ring-red-500/50">
+          <div className="mb-6 rounded-lg bg-red-900/50 p-4 text-center text-red-100 ring-1 ring-red-500/50" role="status">
             <p className="font-semibold">An error occurred:</p>
             <p>{globalError}</p>
           </div>
@@ -749,7 +777,7 @@ export default function Page() {
 
         {/* --- Loading Spinner --- */}
         {isLoading && (
-          <div className="flex h-64 items-center justify-center">
+          <div className="flex h-64 items-center justify-center" role="status">
             <Loader2 className="h-12 w-12 animate-spin text-sky-300" />
           </div>
         )}
