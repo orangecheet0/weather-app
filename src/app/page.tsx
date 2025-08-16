@@ -410,33 +410,39 @@ export default function Page() {
     setWeatherData(null);
 
     try {
-      const bdcUrl = `https://api.bigdatacloud.net/data/city-geocoding-autocomplete?query=${encodeURIComponent(raw)}&limit=1&localityLanguage=en`;
-      const res = await fetch(bdcUrl);
+      const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY;
+      if (!apiKey) {
+        throw new Error("OpenWeatherMap API key is missing. Please contact support.");
+      }
+      const owmUrl = `http://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(raw)}&limit=1&appid=${apiKey}`;
+      const res = await fetch(owmUrl);
 
       if (!res.ok) {
-        throw new Error("Geocoding search failed. Please try again later.");
+        const statusText = res.statusText || "Unknown error";
+        throw new Error(`Geocoding search failed with status ${res.status}: ${statusText}. Please try again later.`);
       }
       const data = await res.json();
 
-      const result = data?.results?.[0];
-
-      if (!result) {
-        setGlobalError(`No matches found for "${raw}". Please try a different query.`);
+      if (!data || data.length === 0) {
+        setGlobalError(`No matches found for "${raw}". Please try a different city.`);
         return;
       }
 
+      const result = data[0];
       const newLocation = {
-        coords: { lat: result.latitude, lon: result.longitude },
-        name: result.city,
-        admin1: result.principalSubdivision,
-        country: result.countryCode,
+        coords: { lat: result.lat, lon: result.lon },
+        name: result.name,
+        admin1: result.state,
+        country: result.country,
       };
 
       setLocation(newLocation);
+      console.log("Search result:", newLocation); // Debug log
       navigateToLocation(newLocation, true);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Search error";
+      const message = e instanceof Error ? e.message : "Search error. Please try again.";
       setGlobalError(message);
+      console.error("Search error:", e);
     } finally {
       setIsSearching(false);
       setIsLoading(false);
