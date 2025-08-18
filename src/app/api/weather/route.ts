@@ -3,35 +3,31 @@ import { NextResponse } from "next/server";
 
 const validUnits = ["imperial", "metric", "standard"];
 
-// We define an async function for GET requests.
-// When you fetch '/api/weather', this function will run.
+// GET /api/weather
 export async function GET(request: Request) {
   try {
-    // 1. Get location and unit params from the request URL
     const { searchParams } = new URL(request.url);
     const lat = searchParams.get("lat");
     const lon = searchParams.get("lon");
     const unit = searchParams.get("unit") || "imperial";
+
     if (!validUnits.includes(unit)) {
       return NextResponse.json({ error: "Invalid unit" }, { status: 400 });
     }
-
-    // If we don't have lat or lon, return an error
     if (!lat || !lon) {
-      return NextResponse.json({ error: "Latitude and longitude are required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Latitude and longitude are required" },
+        { status: 400 }
+      );
     }
 
-    // 2. Fetch the main forecast from Open-Meteo
-    const forecastPromise = fetchForecast(lat, lon, unit);
+    // Fetch forecast + alerts in parallel
+    const [forecastResponse, alertsResponse] = await Promise.all([
+      fetchForecast(lat, lon, unit),
+      fetchAlerts(lat, lon),
+    ]);
 
-    // 3. Fetch alerts from Weather.gov
-    // Note: This API is for the US only.
-    const alertsPromise = fetchAlerts(lat, lon);
-
-    // 4. Wait for both API calls to complete at the same time
-    const [forecastResponse, alertsResponse] = await Promise.all([forecastPromise, alertsPromise]);
-
-    // 5. Combine the results and send them back to the browser
+    // Combine and return
     return NextResponse.json({
       ...forecastResponse,
       alerts: alertsResponse,
@@ -44,7 +40,6 @@ export async function GET(request: Request) {
         { status: 504 }
       );
     }
-    // If anything goes wrong, send a generic server error response
     return NextResponse.json(
       { error: "Failed to fetch weather data" },
       { status: 500 }
@@ -64,8 +59,10 @@ async function fetchForecast(lat: string, lon: string, unit: string) {
     timezone: "auto",
     current:
       "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,wind_speed_10m,wind_gusts_10m,weather_code,uv_index",
-    hourly: "temperature_2m,precipitation_probability,weather_code,uv_index",
-    daily: "temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code,uv_index_max",
+    hourly:
+      "temperature_2m,precipitation_probability,weather_code,uv_index",
+    daily:
+      "temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code,uv_index_max",
     forecast_days: "7",
     temperature_unit,
     wind_speed_unit,
@@ -93,17 +90,20 @@ async function fetchAlerts(lat: string, lon: string) {
 
     if (!res.ok) {
       console.warn("Could not fetch alerts from weather.gov");
-      return []; // Return empty array on failure, don't break the whole request
+      return [];
     }
 
     const data = await res.json();
-    // We only need the 'features' array from the response
-    return Array.isArray(data?.features) ? data.features : [];
+
+    // ✅ Return only the NWS alert properties
+    return Array.isArray(data?.features)
+      ? data.features.map((f: any) => f.properties)
+      : [];
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw error;
     }
     console.warn("Error fetching alerts:", error);
-    return []; // Return empty array on any error
+    return [];
   }
 }
