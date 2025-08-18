@@ -12,7 +12,7 @@ import DailyForecast from "@/components/DailyForecast";
 import MapPanel from "@/components/MapPanel";
 import AlertsPanel from "@/components/AlertsPanel";
 
-// Theme classes used for background gradient
+// Background gradient themes
 const THEMES = {
   day: "from-sky-600 to-blue-900",
   night: "from-gray-700 to-gray-900",
@@ -20,9 +20,16 @@ const THEMES = {
 
 export default function Page() {
   const [unit, setUnit] = useState<"imperial" | "metric">("imperial");
-  const { location, weatherData, isLoading, globalError } = useWeather();
+  const {
+    location,
+    weatherData,
+    isLoading,
+    globalError,
+    requestGeolocation,
+    setLocation,
+  } = useWeather();
 
-  // For now we default to "day" (you can add a dynamic check later if needed)
+  // For now we default to "day"
   const themeKey = "day";
 
   const placeLabel = location
@@ -36,7 +43,12 @@ export default function Page() {
         THEMES[themeKey]
       )}
     >
-      <Header unit={unit} onUnitChange={setUnit} />
+      <Header
+        unit={unit}
+        onUnitChange={setUnit}
+        onLocationSelected={setLocation}
+        requestGeolocation={requestGeolocation}
+      />
 
       <main className="mx-auto max-w-7xl px-4 py-8">
         <div className="mb-6 flex items-baseline justify-between">
