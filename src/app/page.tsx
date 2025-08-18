@@ -3,7 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { Loader2 } from "lucide-react";
-import { useWeather } from "@/lib/useWeather";  // <- new hook
+import { useWeather } from "@/lib/useWeather";
 
 import Header from "@/components/Header";
 import CurrentWeatherCard from "@/components/CurrentWeatherCard";
@@ -12,11 +12,19 @@ import DailyForecast from "@/components/DailyForecast";
 import MapPanel from "@/components/MapPanel";
 import AlertsPanel from "@/components/AlertsPanel";
 
+// Theme classes used for background gradient
+const THEMES = {
+  day: "from-sky-600 to-blue-900",
+  night: "from-gray-700 to-gray-900",
+};
+
 export default function Page() {
   const [unit, setUnit] = useState<"imperial" | "metric">("imperial");
   const { location, weatherData, isLoading, globalError } = useWeather();
 
+  // For now we default to "day" (you can add a dynamic check later if needed)
   const themeKey = "day";
+
   const placeLabel = location
     ? `${location.name}, ${location.admin1} (${location.country})`
     : "Loading location...";
@@ -44,7 +52,7 @@ export default function Page() {
 
         {isLoading && (
           <div className="flex h-64 items-center justify-center">
-            <Loader2 className="h-12 w-12 animate-spin text-sky-300" />
+            <Loader2 className="h-12 w-12 animate-spin" />
           </div>
         )}
 
