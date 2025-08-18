@@ -16,7 +16,7 @@ export default function Page() {
   const [unit, setUnit] = useState<"imperial" | "metric">("imperial");
   const { location, weatherData, isLoading, globalError } = useWeather();
 
-  const themeKey = weatherData?.current?.isDay ? "day" : "night";
+  const themeKey = weatherData?.current?.is_day ? "day" : "night";
   const placeLabel = location
     ? `${location.name}, ${location.admin1} (${location.country})`
     : "Loading location...";
