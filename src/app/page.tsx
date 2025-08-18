@@ -97,6 +97,13 @@ interface AlertItem {
   areaDesc?: string;
 }
 
+type SearchCandidate = {
+  coords: { lat: number; lon: number };
+  name: string;
+  admin1?: string;
+  country: string;
+};
+
 /* =========================
    Helpers
    ========================= */
@@ -156,7 +163,6 @@ function weatherIcon(code: number | null) {
 
 function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
   const { lat, lon } = coords;
-  console.log("Windy map coords:", { lat, lon }); // Debug log
   const metricTemp = unit === "imperial" ? "°F" : "°C";
   const metricWind = unit === "imperial" ? "mph" : "km/h";
   const p = new URLSearchParams({
@@ -361,6 +367,7 @@ export default function Page() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchCandidates, setSearchCandidates] = useState<SearchCandidate[] | null>(null);
 
   const fetchControllerRef = useRef<AbortController | null>(null);
 
@@ -380,7 +387,6 @@ export default function Page() {
   };
 
   async function reverseLookup(c: Coords, isInitialLoad = false) {
-    console.log("Reverse lookup coords:", c); // Debug log
     try {
       const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${c.lat}&longitude=${c.lon}&localityLanguage=en`;
       const res = await fetch(url);
@@ -389,16 +395,15 @@ export default function Page() {
       const name = j.city || j.locality || "Your area";
       const newLocation = { coords: c, name, admin1: j.principalSubdivision, country: j.countryCode };
       setLocation(newLocation);
-      console.log("Set location:", newLocation); // Debug log
       navigateToLocation(newLocation, !isInitialLoad);
     } catch (e: unknown) {
-      console.error("Reverse geocoding error:", e);
       const newLocation = { coords: c, name: "Unknown location" };
       setLocation(newLocation);
       navigateToLocation(newLocation, !isInitialLoad);
     }
   }
 
+  // --------- ENHANCED SEARCH: MULTIPLE CANDIDATE HANDLING ----------
   async function runSearch(query: string) {
     const raw = query.trim();
     if (!raw) {
@@ -408,13 +413,16 @@ export default function Page() {
     setIsSearching(true);
     setGlobalError(null);
     setWeatherData(null);
+    setSearchCandidates(null);
 
     try {
       const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY;
       if (!apiKey) {
         throw new Error("OpenWeatherMap API key is missing. Please contact support.");
       }
-      const owmUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(raw)}&limit=1&appid=${apiKey}`;      const res = await fetch(owmUrl);
+      // Search for up to 5 candidates for disambiguation
+      const owmUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(raw)}&limit=5&appid=${apiKey}`;
+      const res = await fetch(owmUrl);
 
       if (!res.ok) {
         const statusText = res.statusText || "Unknown error";
@@ -427,6 +435,20 @@ export default function Page() {
         return;
       }
 
+      // If multiple results, let user choose
+      if (data.length > 1) {
+        setSearchCandidates(
+          data.map((result: any) => ({
+            coords: { lat: result.lat, lon: result.lon },
+            name: result.name,
+            admin1: result.state,
+            country: result.country,
+          }))
+        );
+        return;
+      }
+
+      // One result, set location immediately
       const result = data[0];
       const newLocation = {
         coords: { lat: result.lat, lon: result.lon },
@@ -436,16 +458,21 @@ export default function Page() {
       };
 
       setLocation(newLocation);
-      console.log("Search result:", newLocation); // Debug log
       navigateToLocation(newLocation, true);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Search error. Please try again.";
       setGlobalError(message);
-      console.error("Search error:", e);
     } finally {
       setIsSearching(false);
       setIsLoading(false);
     }
+  }
+
+  // Candidate select handler
+  function handleCandidateSelect(candidate: SearchCandidate) {
+    setLocation(candidate);
+    setSearchCandidates(null);
+    navigateToLocation(candidate, true);
   }
 
   async function requestGeolocation(): Promise<boolean> {
@@ -461,9 +488,7 @@ export default function Page() {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const c = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-          console.log("Geolocation success:", { lat: c.lat, lon: c.lon, accuracy: pos.coords.accuracy }); // Debug log
           if (pos.coords.accuracy > 1000) {
-            console.warn("Low geolocation accuracy:", pos.coords.accuracy);
             setGlobalError("Location accuracy is low. Try enabling high-accuracy GPS or searching manually.");
           }
           reverseLookup(c, true);
@@ -471,7 +496,6 @@ export default function Page() {
           resolve(true);
         },
         (err) => {
-          console.error("Geolocation error:", err);
           let errorMessage = "Could not get location. Please enable it in your browser settings or search manually.";
           if (err.message.includes("Permissions policy")) {
             errorMessage = "Geolocation is blocked by a permissions policy. Please enable location access in your browser settings or search manually.";
@@ -606,11 +630,31 @@ export default function Page() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search any city..."
+                placeholder="Enter city, state or city, country (e.g. 'meridian, ms' or 'paris, france')"
                 className="w-full rounded-lg bg-slate-900/60 px-3 py-1.5 placeholder:text-slate-400 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
               {isSearching && (
                 <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-sky-300" />
+              )}
+              {/* Candidate results dropdown */}
+              {searchCandidates && (
+                <div className="absolute left-0 right-0 z-10 mt-2 w-full max-w-md rounded bg-white shadow-lg text-black">
+                  {searchCandidates.map((c, idx) => (
+                    <button
+                      key={`${c.name}-${c.coords.lat}-${c.coords.lon}-${c.admin1}-${c.country}`}
+                      className="block w-full text-left px-4 py-2 hover:bg-sky-100"
+                      type="button"
+                      onClick={() => handleCandidateSelect(c)}
+                    >
+                      {c.name}
+                      {c.admin1 ? `, ${c.admin1}` : ""}
+                      {c.country ? `, ${c.country}` : ""}
+                      <span className="text-xs text-gray-500 ml-2">
+                        ({c.coords.lat.toFixed(2)}, {c.coords.lon.toFixed(2)})
+                      </span>
+                    </button>
+                  ))}
+                </div>
               )}
             </form>
             <button
