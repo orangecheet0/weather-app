@@ -9,7 +9,7 @@ interface HeaderProps {
   unit: Unit;
   onUnitChange: (unit: Unit) => void;
   onLocationSelected: (loc: LocationState) => void;
-  requestGeolocation: () => Promise<boolean>;
+  requestGeolocation: () => Promise<LocationState | null>;
 }
 
 export default function Header({
