@@ -104,6 +104,15 @@ type SearchCandidate = {
   country: string;
 };
 
+// --- Patch: OpenWeatherMap geocoding API result type
+type OWMGeocodeResult = {
+  lat: number;
+  lon: number;
+  name: string;
+  state?: string;
+  country: string;
+};
+
 /* =========================
    Helpers
    ========================= */
@@ -428,7 +437,7 @@ export default function Page() {
         const statusText = res.statusText || "Unknown error";
         throw new Error(`Geocoding search failed with status ${res.status}: ${statusText}. Please try again later.`);
       }
-      const data = await res.json();
+      const data = (await res.json()) as OWMGeocodeResult[];
 
       if (!data || data.length === 0) {
         setGlobalError(`No matches found for "${raw}". Please try a different city.`);
@@ -438,7 +447,7 @@ export default function Page() {
       // If multiple results, let user choose
       if (data.length > 1) {
         setSearchCandidates(
-          data.map((result: any) => ({
+          data.map((result: OWMGeocodeResult) => ({
             coords: { lat: result.lat, lon: result.lon },
             name: result.name,
             admin1: result.state,
@@ -639,7 +648,7 @@ export default function Page() {
               {/* Candidate results dropdown */}
               {searchCandidates && (
                 <div className="absolute left-0 right-0 z-10 mt-2 w-full max-w-md rounded bg-white shadow-lg text-black">
-                  {searchCandidates.map((c, idx) => (
+                  {searchCandidates.map((c) => (
                     <button
                       key={`${c.name}-${c.coords.lat}-${c.coords.lon}-${c.admin1}-${c.country}`}
                       className="block w-full text-left px-4 py-2 hover:bg-sky-100"
