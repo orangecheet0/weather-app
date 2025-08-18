@@ -86,5 +86,13 @@ export function useWeather() {
     })();
   }, []);
 
-  return { location, weatherData, isLoading, globalError };
+  // 👉 Return all values / setters the page might need
+  return {
+    location,
+    weatherData,
+    isLoading,
+    globalError,
+    requestGeolocation,
+    setLocation,
+  };
 }
