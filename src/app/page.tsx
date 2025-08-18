@@ -414,8 +414,7 @@ export default function Page() {
       if (!apiKey) {
         throw new Error("OpenWeatherMap API key is missing. Please contact support.");
       }
-      const owmUrl = `http://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(raw)}&limit=1&appid=${apiKey}`;
-      const res = await fetch(owmUrl);
+      const owmUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(raw)}&limit=1&appid=${apiKey}`;      const res = await fetch(owmUrl);
 
       if (!res.ok) {
         const statusText = res.statusText || "Unknown error";
