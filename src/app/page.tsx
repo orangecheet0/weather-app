@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import clsx from "clsx";
 import debounce from "lodash.debounce";
 
 import CurrentWeatherCard from "@/components/CurrentWeatherCard";
