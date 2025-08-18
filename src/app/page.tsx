@@ -31,7 +31,17 @@ const DEFAULT_CITY: LocationState = {
   coords: { lat: 34.7304, lon: -86.5861 },
 };
 
+const THEMES = {
+  clearDay: "from-sky-300 via-sky-500 to-indigo-700",
+  clearNight: "from-indigo-900 via-slate-950 to-black",
+  cloudy: "from-slate-700 via-slate-900 to-slate-950",
+  rain: "from-sky-700 via-slate-950 to-slate-950",
+  snow: "from-cyan-200 via-slate-800 to-slate-950",
+  storm: "from-indigo-800 via-slate-950 to-black",
+} as const;
+
 export default function Page() {
+
   const router = useRouter();
 
   // --- STATE MANAGEMENT ---
