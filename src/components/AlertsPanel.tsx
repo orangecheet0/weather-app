@@ -1,8 +1,8 @@
 import React from "react";
 import { AlertTriangle } from "lucide-react";
-import type { NWSFeature } from "@/types";
+import type { AlertItem } from "@/types";
 
-export default function AlertsPanel({ alerts }: { alerts: NWSFeature[] }) {
+export default function AlertsPanel({ alerts }: { alerts: AlertItem[] }) {
   if (!alerts || alerts.length === 0) {
     return (
       <div className="rounded-xl bg-slate-900/40 p-6 ring-1 ring-white/10 backdrop-blur-sm">
@@ -22,21 +22,15 @@ export default function AlertsPanel({ alerts }: { alerts: NWSFeature[] }) {
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-red-400" />
             <h3 className="font-semibold text-red-100">
-              {alert.properties?.event || "Alert"}
+              {alert.event || "Alert"}
             </h3>
           </div>
-          <p className="mt-2 text-sm text-red-100">
-            {alert.properties?.headline}
-          </p>
-          <p className="mt-1 text-xs text-red-200">
-            {alert.properties?.areaDesc}
-          </p>
-          <p className="mt-2 text-sm text-red-100">
-            {alert.properties?.description}
-          </p>
-          {alert.properties?.instruction && (
+          <p className="mt-2 text-sm text-red-100">{alert.headline}</p>
+          <p className="mt-1 text-xs text-red-200">{alert.areaDesc}</p>
+          <p className="mt-2 text-sm text-red-100">{alert.description}</p>
+          {alert.instruction && (
             <p className="mt-2 text-sm text-red-100">
-              Instructions: {alert.properties.instruction}
+              Instructions: {alert.instruction}
             </p>
           )}
         </div>
