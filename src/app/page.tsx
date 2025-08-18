@@ -104,7 +104,6 @@ type SearchCandidate = {
   country: string;
 };
 
-// --- Patch: OpenWeatherMap geocoding API result type
 type OWMGeocodeResult = {
   lat: number;
   lon: number;
@@ -219,6 +218,46 @@ function pickTheme(code: number | null | undefined, isoTime?: string): ThemeKey 
   if (night) return "clearNight";
   if ([1, 2, 3, 45, 48].includes(code)) return "cloudy";
   return "clearDay";
+}
+
+/* =========================
+   Input Normalization for Geocoding
+   ========================= */
+
+// Add this mapping and normalize function near the top of your file
+const US_STATES: Record<string, string> = {
+  "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
+  "colorado": "CO", "connecticut": "CT", "delaware": "DE", "florida": "FL", "georgia": "GA",
+  "hawaii": "HI", "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA",
+  "kansas": "KS", "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+  "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+  "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV", "new hampshire": "NH",
+  "new jersey": "NJ", "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+  "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA",
+  "rhode island": "RI", "south carolina": "SC", "south dakota": "SD", "tennessee": "TN",
+  "texas": "TX", "utah": "UT", "vermont": "VT", "virginia": "VA", "washington": "WA",
+  "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY"
+};
+
+function normalizeQuery(input: string): string {
+  let parts = input
+    .split(",")
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  // If US state is entered as full name, convert to code
+  if (parts.length >= 2 && parts[1].length > 2) {
+    const stateName = parts[1].toLowerCase();
+    if (US_STATES[stateName]) {
+      parts[1] = US_STATES[stateName];
+    }
+  }
+
+  // State and country codes should be uppercase
+  if (parts[1]) parts[1] = parts[1].toUpperCase();
+  if (parts[2]) parts[2] = parts[2].toUpperCase();
+
+  return parts.join(",");
 }
 
 /* =========================
@@ -429,8 +468,9 @@ export default function Page() {
       if (!apiKey) {
         throw new Error("OpenWeatherMap API key is missing. Please contact support.");
       }
-      // Search for up to 5 candidates for disambiguation
-      const owmUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(raw)}&limit=5&appid=${apiKey}`;
+      // Normalize the user input for city,state,country
+      const normQuery = normalizeQuery(raw);
+      const owmUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(normQuery)}&limit=5&appid=${apiKey}`;
       const res = await fetch(owmUrl);
 
       if (!res.ok) {
@@ -639,7 +679,7 @@ export default function Page() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Enter city, state or city, country (e.g. 'meridian, ms' or 'paris, france')"
+                placeholder="Enter city, state or city, country (e.g. 'Chicago, IL' or 'Paris, France')"
                 className="w-full rounded-lg bg-slate-900/60 px-3 py-1.5 placeholder:text-slate-400 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
               {isSearching && (
