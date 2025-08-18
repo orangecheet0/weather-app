@@ -2,9 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import debounce from "lodash.debounce";
-import { Loader2, Sun, LocateFixed } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import CurrentWeatherCard from "@/components/CurrentWeatherCard";
 import DailyForecast from "@/components/DailyForecast";
@@ -12,17 +10,7 @@ import HourlyForecast from "@/components/HourlyForecast";
 import AlertsPanel from "@/components/AlertsPanel";
 import MapPanel from "@/components/MapPanel";
 
-import {
-  normalizeQuery,
-  windyUrl,
-  pickTheme,
-  formatTemp,
-  formatWind,
-  formatUV,
-  shortDate,
-  shortTime,
-  weatherIcon,
-} from "@/utils/formatters";
+import { normalizeQuery, pickTheme } from "@/utils/formatters";
 
 import type {
   Coords,
