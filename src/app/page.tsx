@@ -257,32 +257,38 @@ export default function Page() {
   useEffect(() => {
     if (!location) return;
 
-    async function fetchAllData() {
-      setIsLoading(true);
-      setGlobalError(null);
-      fetchControllerRef.current?.abort();
-      fetchControllerRef.current = new AbortController();
+async function fetchAllData() {
+  // Prevent TypeScript error when location is still null
+  if (!location) return;
 
-      try {
-        const res = await fetch(
-          `/api/weather?lat=${location.coords.lat}&lon=${location.coords.lon}&unit=${unit}`,
-          { signal: fetchControllerRef.current.signal }
-        );
-        if (!res.ok) {
-          const error = await res.json();
-          throw new Error(error.error || "Failed to fetch weather data.");
-        }
+  setIsLoading(true);
+  setGlobalError(null);
 
-        const data: WeatherData = await res.json();
-        setWeatherData(data);
-      } catch (err: any) {
-        if (err.name !== "AbortError") {
-          setGlobalError(err.message);
-        }
-      } finally {
-        setIsLoading(false);
-      }
+  // Abort any existing fetch
+  fetchControllerRef.current?.abort();
+  fetchControllerRef.current = new AbortController();
+
+  try {
+    const res = await fetch(
+      `/api/weather?lat=${location.coords.lat}&lon=${location.coords.lon}&unit=${unit}`,
+      { signal: fetchControllerRef.current.signal }
+    );
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Failed to fetch weather data.");
     }
+
+    const data: WeatherData = await res.json();
+    setWeatherData(data);
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name !== "AbortError") {
+      setGlobalError(err.message);
+    }
+  } finally {
+    setIsLoading(false);
+  }
+}
 
     fetchAllData();
     return () => fetchControllerRef.current?.abort();
