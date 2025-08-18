@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import debounce from "lodash.debounce";
 import {
   Cloud,
   CloudDrizzle,
@@ -224,7 +225,6 @@ function pickTheme(code: number | null | undefined, isoTime?: string): ThemeKey 
    Input Normalization for Geocoding
    ========================= */
 
-// Add this mapping and normalize function near the top of your file
 const US_STATES: Record<string, string> = {
   "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
   "colorado": "CO", "connecticut": "CT", "delaware": "DE", "florida": "FL", "georgia": "GA",
@@ -419,6 +419,55 @@ export default function Page() {
 
   const fetchControllerRef = useRef<AbortController | null>(null);
 
+  // Debounced suggestion fetcher for real-time dropdown
+  const fetchSuggestions = useMemo(
+    () =>
+      debounce(async (raw: string) => {
+        const trimmed = raw.trim();
+        if (!trimmed) {
+          setSearchCandidates(null);
+          return;
+        }
+        setIsSearching(true);
+        try {
+          const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY;
+          if (!apiKey) {
+            setIsSearching(false);
+            return;
+          }
+          const normQuery = normalizeQuery(trimmed);
+          const owmUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(normQuery)}&limit=5&appid=${apiKey}`;
+          const res = await fetch(owmUrl);
+          if (!res.ok) {
+            setIsSearching(false);
+            return;
+          }
+          const data = (await res.json()) as OWMGeocodeResult[];
+          if (data && data.length > 0) {
+            setSearchCandidates(
+              data.map((result) => ({
+                coords: { lat: result.lat, lon: result.lon },
+                name: result.name,
+                admin1: result.state,
+                country: result.country,
+              }))
+            );
+          } else {
+            setSearchCandidates(null);
+          }
+        } finally {
+          setIsSearching(false);
+        }
+      }, 300), // 300ms debounce
+    []
+  );
+
+  // Update suggestions as user types
+  useEffect(() => {
+    fetchSuggestions(query);
+    return () => fetchSuggestions.cancel();
+  }, [query, fetchSuggestions]);
+
   // --- API CALLS (Client-side Geocoding) ---
 
   const navigateToLocation = (loc: LocationState, shouldPush: boolean) => {
@@ -451,7 +500,7 @@ export default function Page() {
     }
   }
 
-  // --------- ENHANCED SEARCH: MULTIPLE CANDIDATE HANDLING ----------
+  // Search handler (used for fallback/manual enter or Enter key)
   async function runSearch(query: string) {
     const raw = query.trim();
     if (!raw) {
@@ -468,7 +517,6 @@ export default function Page() {
       if (!apiKey) {
         throw new Error("OpenWeatherMap API key is missing. Please contact support.");
       }
-      // Normalize the user input for city,state,country
       const normQuery = normalizeQuery(raw);
       const owmUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(normQuery)}&limit=5&appid=${apiKey}`;
       const res = await fetch(owmUrl);
@@ -517,8 +565,11 @@ export default function Page() {
     }
   }
 
-  // Candidate select handler
+  // Candidate select handler for dropdown
   function handleCandidateSelect(candidate: SearchCandidate) {
+    setQuery(
+      `${candidate.name}${candidate.admin1 ? `, ${candidate.admin1}` : ""}${candidate.country ? `, ${candidate.country}` : ""}`
+    );
     setLocation(candidate);
     setSearchCandidates(null);
     navigateToLocation(candidate, true);
@@ -675,17 +726,28 @@ export default function Page() {
           </motion.div>
 
           <div className="ml-auto flex w-full max-w-md items-center gap-2">
-            <form onSubmit={(e) => { e.preventDefault(); runSearch(query); }} className="relative w-full">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (searchCandidates && searchCandidates.length > 0) {
+                  handleCandidateSelect(searchCandidates[0]);
+                } else {
+                  runSearch(query);
+                }
+              }}
+              className="relative w-full"
+              autoComplete="off"
+            >
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Enter city, state or city, country (e.g. 'Chicago, IL' or 'Paris, France')"
+                placeholder="Enter city, state or city, country (e.g. 'meridian, ms' or 'paris, france')"
                 className="w-full rounded-lg bg-slate-900/60 px-3 py-1.5 placeholder:text-slate-400 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                autoComplete="off"
               />
               {isSearching && (
                 <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-sky-300" />
               )}
-              {/* Candidate results dropdown */}
               {searchCandidates && (
                 <div className="absolute left-0 right-0 z-10 mt-2 w-full max-w-md rounded bg-white shadow-lg text-black">
                   {searchCandidates.map((c) => (
