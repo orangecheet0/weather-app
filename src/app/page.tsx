@@ -240,7 +240,7 @@ const US_STATES: Record<string, string> = {
 };
 
 function normalizeQuery(input: string): string {
-  let parts = input
+  const parts = input
     .split(",")
     .map(part => part.trim())
     .filter(Boolean);
