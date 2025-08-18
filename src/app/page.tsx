@@ -22,7 +22,7 @@ import {
   shortDate,
   shortTime,
   weatherIcon,
-} from "@/utils/formatters";
+import { ... } from "@/utils/formatters";
 
 import type {
   Coords,
