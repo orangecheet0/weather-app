@@ -741,7 +741,7 @@ export default function Page() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Enter city, state or city, country (e.g. 'meridian, ms' or 'paris, france')"
+                placeholder="Enter city, state or city, country (e.g. 'Chicago, IL' or 'Paris, France')"
                 className="w-full rounded-lg bg-slate-900/60 px-3 py-1.5 placeholder:text-slate-400 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-sky-500"
                 autoComplete="off"
               />
