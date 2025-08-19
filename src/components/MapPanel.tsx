@@ -11,7 +11,6 @@ export default function MapPanel({
 }) {
   return (
     <div className="rounded-xl bg-slate-900/40 p-6 ring-1 ring-white/10 backdrop-blur-sm">
-      <h2 className="text-lg font-semibold mb-4">Weather Radar</h2>
       <iframe
         src={windyUrl(coords, unit)}
         className="w-full h-64 rounded-lg"
