@@ -58,7 +58,7 @@ export default function CurrentWeatherCard({
         <div className="flex flex-col text-sm sm:text-right gap-1">
           <div>
             Condition:{" "}
-            <span className="font-medium">{getConditionLabel(data.weather_code)}</span>
+            <span className="font-medium">{getConditionLabel(data.weather_code ?? 0)}</span>
           </div>
           <div>
             Feels like:{" "}
