@@ -38,7 +38,9 @@ export default function Header({
 
           const normQuery = normalizeQuery(trimmed);
           const res = await fetch(
-            `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(normQuery)}&limit=5&appid=${apiKey}`
+            `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(
+              normQuery
+            )}&limit=5&appid=${apiKey}`
           );
           if (!res.ok) return;
 
@@ -69,7 +71,9 @@ export default function Header({
 
   function handleCandidateSelect(candidate: SearchCandidate) {
     setQuery(
-      `${candidate.name}${candidate.admin1 ? `, ${candidate.admin1}` : ""}${candidate.country ? `, ${candidate.country}` : ""}`
+      `${candidate.name}${candidate.admin1 ? `, ${candidate.admin1}` : ""}${
+        candidate.country ? `, ${candidate.country}` : ""
+      }`
     );
     setSearchCandidates(null);
     onLocationSelected(candidate);
@@ -83,8 +87,9 @@ export default function Header({
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-900/60 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
+    <header className="sticky top-4 z-40 mx-auto max-w-[1280px] rounded-xl bg-slate-900/60 backdrop-blur-md shadow-md">
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* Logo */}
         <div className="flex items-center gap-2">
           <Sun className="h-6 w-6 text-sky-300" />
           <span className="font-semibold tracking-wide bg-gradient-to-r from-sky-300 via-cyan-200 to-emerald-200 bg-clip-text text-transparent">
@@ -92,6 +97,7 @@ export default function Header({
           </span>
         </div>
 
+        {/* Search + “use my location” */}
         <div className="ml-auto flex w-full max-w-md items-center gap-2">
           <form onSubmit={handleSubmit} className="relative w-full" autoComplete="off">
             <input
@@ -130,16 +136,21 @@ export default function Header({
           </button>
         </div>
 
+        {/* Unit toggle */}
         <div role="group" className="flex overflow-hidden rounded-lg ring-1 ring-white/10">
           <button
             onClick={() => onUnitChange("imperial")}
-            className={`px-3 py-1.5 text-sm ${unit === "imperial" ? "bg-sky-600" : "hover:bg-white/5"}`}
+            className={`px-3 py-1.5 text-sm ${
+              unit === "imperial" ? "bg-sky-600" : "hover:bg-white/5"
+            }`}
           >
             °F
           </button>
           <button
             onClick={() => onUnitChange("metric")}
-            className={`px-3 py-1.5 text-sm ${unit === "metric" ? "bg-sky-600" : "hover:bg-white/5"}`}
+            className={`px-3 py-1.5 text-sm ${
+              unit === "metric" ? "bg-sky-600" : "hover:bg-white/5"
+            }`}
           >
             °C
           </button>
