@@ -29,7 +29,7 @@ export default function Page() {
     setLocation,
   } = useWeather();
 
-  // For now we default to "day"
+  // TODO: add real day/night check — for now use day
   const themeKey = "day";
 
   const placeLabel = location
@@ -39,7 +39,7 @@ export default function Page() {
   return (
     <div
       className={clsx(
-        "relative min-h-screen text-slate-100 selection:bg-sky-300/40 bg-gradient-to-br transition-colors duration-1000",
+        "min-h-screen text-slate-100 bg-gradient-to-br transition-colors duration-1000 selection:bg-sky-300/40",
         THEMES[themeKey]
       )}
     >
@@ -50,13 +50,11 @@ export default function Page() {
         requestGeolocation={requestGeolocation}
       />
 
-      <main className="mx-auto max-w-7xl px-4 py-8">
-        <div className="mb-6 flex items-baseline justify-between">
-          <h1 className="text-3xl font-bold tracking-tight">{placeLabel}</h1>
-        </div>
+      <main className="mx-auto max-w-[1280px] px-4 py-8">
+        <h1 className="text-3xl font-bold tracking-tight mb-8">{placeLabel}</h1>
 
         {globalError && (
-          <div className="mb-6 rounded-lg bg-red-900/50 p-4 text-center text-red-100 ring-1 ring-red-500/50">
+          <div className="mb-8 rounded-lg bg-red-900/50 p-4 text-center text-red-100 ring-1 ring-red-500/50">
             <p className="font-semibold">An error occurred:</p>
             <p>{globalError}</p>
           </div>
@@ -69,16 +67,29 @@ export default function Page() {
         )}
 
         {!isLoading && weatherData && location && (
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-            <div className="space-y-8 lg:col-span-2">
-              <CurrentWeatherCard data={weatherData.current} unit={unit} />
-              <HourlyForecast data={weatherData.hourly} unit={unit} />
-              <AlertsPanel alerts={weatherData.alerts} />
+          <div className="grid gap-x-8 gap-y-10 md:grid-cols-1 lg:grid-cols-3">
+            <div className="space-y-10 lg:col-span-2">
+              <div className="bg-slate-900/60 backdrop-blur-md shadow-xl rounded-2xl p-6">
+                <CurrentWeatherCard data={weatherData.current} unit={unit} />
+              </div>
+
+              <div className="bg-slate-900/60 backdrop-blur-md shadow-xl rounded-2xl p-6">
+                <HourlyForecast data={weatherData.hourly} unit={unit} />
+              </div>
+
+              <div className="bg-slate-900/60 backdrop-blur-md shadow-xl rounded-2xl p-6">
+                <AlertsPanel alerts={weatherData.alerts} />
+              </div>
             </div>
 
-            <div className="space-y-8">
-              <DailyForecast data={weatherData.daily} unit={unit} />
-              <MapPanel coords={location.coords} unit={unit} />
+            <div className="space-y-10">
+              <div className="bg-slate-900/60 backdrop-blur-md shadow-xl rounded-2xl p-6">
+                <DailyForecast data={weatherData.daily} unit={unit} />
+              </div>
+
+              <div className="bg-slate-900/60 backdrop-blur-md shadow-xl rounded-2xl p-6">
+                <MapPanel coords={location.coords} unit={unit} />
+              </div>
             </div>
           </div>
         )}
