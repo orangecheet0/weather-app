@@ -87,7 +87,7 @@ export default function Header({
   }
 
   return (
-    <header className="sticky top-4 z-40 mx-auto max-w-[1280px] rounded-xl bg-slate-900/60 backdrop-blur-md shadow-md">
+    <header className="sticky top-0 z-40 w-full bg-slate-900/60 backdrop-blur-md shadow-md">
       <div className="flex items-center gap-3 px-4 py-3">
         {/* Logo */}
         <div className="flex items-center gap-2">
