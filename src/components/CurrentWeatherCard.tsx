@@ -10,7 +10,6 @@ import {
 
 import type { CurrentBlock, Unit } from "@/types";
 
-// Map weather_code to readable labels
 function getConditionLabel(code: number) {
   const map: Record<number, string> = {
     0: "Clear",
@@ -48,7 +47,9 @@ export default function CurrentWeatherCard({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         {/* Left */}
         <div className="flex items-center gap-4">
-          <div className="text-sky-300 text-6xl">{weatherIcon(data.weather_code)}</div>
+          <div className="text-sky-300 text-6xl">
+            {weatherIcon(data.weather_code, data.is_day)}
+          </div>
           <div className="text-6xl font-light tracking-tighter">
             {formatTemp(data.temperature_2m, unit)}
           </div>
@@ -58,7 +59,9 @@ export default function CurrentWeatherCard({
         <div className="flex flex-col text-sm sm:text-right gap-1">
           <div>
             Condition:{" "}
-            <span className="font-medium">{getConditionLabel(data.weather_code ?? 0)}</span>
+            <span className="font-medium">
+              {getConditionLabel(data.weather_code ?? 0)}
+            </span>
           </div>
           <div>
             Feels like:{" "}
@@ -81,7 +84,6 @@ export default function CurrentWeatherCard({
         </div>
       </div>
 
-      {/* Lower stats */}
       <div className="mt-6 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
         <div className="flex items-center gap-2">
           <Droplets className="h-5 w-5 text-sky-300" />
