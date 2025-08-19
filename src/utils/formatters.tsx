@@ -1,6 +1,7 @@
 import {
   Cloud,
   Sun,
+  Moon,
   CloudFog,
   CloudRain,
   CloudDrizzle,
@@ -130,21 +131,37 @@ export function shortTime(iso: string) {
   return d.toLocaleTimeString(undefined, { hour: "numeric" });
 }
 
-export function weatherIcon(code: number | null) {
-  if (code == null) return <Cloud className="h-6 w-6" aria-hidden />;
-  if ([0].includes(code)) return <Sun className="h-6 w-6" aria-hidden />;
-  if ([1, 2, 3].includes(code)) return <Cloud className="h-6 w-6" aria-hidden />;
-  if ([45, 48].includes(code))
-    return <CloudFog className="h-6 w-6" aria-hidden />;
-  if ([51, 53, 55, 61, 63, 65].includes(code))
-    return <CloudRain className="h-6 w-6" aria-hidden />;
-  if ([80, 81, 82].includes(code))
-    return <CloudDrizzle className="h-6 w-6" aria-hidden />;
-  if ([71, 73, 75, 77, 85, 86].includes(code))
-    return <CloudSnow className="h-6 w-6" aria-hidden />;
-  if ([95, 96, 99].includes(code))
-    return <CloudLightning className="h-6 w-6" aria-hidden />;
-  return <Cloud className="h-6 w-6" aria-hidden />;
+export function weatherIcon(code: number, isDay: boolean = true) {
+  switch (code) {
+    case 0:
+      // Clear sky
+      return isDay ? <Sun /> : <Moon />;
+    case 1:
+    case 2:
+      // Partly cloudy
+      return isDay ? <Sun /> : <Moon />;
+    case 3:
+      return <Cloud />;
+    case 45:
+    case 48:
+      return <CloudFog />;
+    case 51:
+    case 53:
+    case 55:
+      return <CloudDrizzle />;
+    case 61:
+    case 63:
+    case 65:
+      return <CloudRain />;
+    case 71:
+    case 73:
+    case 75:
+      return <CloudSnow />;
+    case 95:
+      return <CloudLightning />;
+    default:
+      return <Sun />;
+  }
 }
 
 export function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
