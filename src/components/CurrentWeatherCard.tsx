@@ -61,16 +61,15 @@ export default function CurrentWeatherCard({
         </div>
       </div>
 
-      {/* Lower stats */}
-      <div className="mt-6 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-        <div className="flex items-center gap-2">
-          <Droplets className="h-5 w-5 text-sky-300" />
-          <span>Humidity: {data.relative_humidity_2m}%</span>
-        </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Sun className="h-5 w-5 text-sky-300" />
-          <span>UV Index: {formatUV(data.uv_index)}</span>
+{/* Lower stats */}
+<div className="mt-6 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+  <div className="flex items-center gap-2">
+    <Droplets className="h-5 w-5 text-sky-300" />
+    <span>Humidity: {data.relative_humidity_2m}%</span>
+  </div>
+  <div className="flex items-center gap-2">
+    <Sun className="h-5 w-5 text-sky-300" />
+    <span>UV Index: {formatUV(data.uv_index)}</span>
         </div>
       </div>
     </div>
