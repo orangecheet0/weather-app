@@ -1,10 +1,10 @@
 import {
-  Cloud,
   Sun,
   Moon,
+  Cloud,
   CloudFog,
-  CloudRain,
   CloudDrizzle,
+  CloudRain,
   CloudSnow,
   CloudLightning,
 } from "lucide-react";
@@ -131,6 +131,10 @@ export function shortTime(iso: string) {
   return d.toLocaleTimeString(undefined, { hour: "numeric" });
 }
 
+/**
+ * Returns an icon component for the given Open-Meteo weather_code.
+ * If `isDay` is false, a moon icon is used for clear / partly cloudy codes.
+ */
 export function weatherIcon(code: number, isDay: boolean = true) {
   switch (code) {
     case 0:
@@ -138,7 +142,7 @@ export function weatherIcon(code: number, isDay: boolean = true) {
       return isDay ? <Sun /> : <Moon />;
     case 1:
     case 2:
-      // Partly cloudy
+      // Mainly clear / partly cloudy
       return isDay ? <Sun /> : <Moon />;
     case 3:
       return <Cloud />;
@@ -160,10 +164,10 @@ export function weatherIcon(code: number, isDay: boolean = true) {
     case 95:
       return <CloudLightning />;
     default:
-      return <Sun />;
+      // Fallback
+      return isDay ? <Sun /> : <Moon />;
   }
 }
-
 export function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
   const { lat, lon } = coords;
   const metricTemp = unit === "imperial" ? "°F" : "°C";
