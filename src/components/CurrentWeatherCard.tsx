@@ -48,7 +48,7 @@ export default function CurrentWeatherCard({
         {/* Left */}
         <div className="flex items-center gap-4">
           <div className="text-sky-300 text-6xl">
-            {weatherIcon(data.weather_code, data.is_day)}
+            weatherIcon(data.weather_code, !!data.is_day)
           </div>
           <div className="text-6xl font-light tracking-tighter">
             {formatTemp(data.temperature_2m, unit)}
