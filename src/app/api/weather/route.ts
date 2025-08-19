@@ -25,16 +25,17 @@ export async function GET(request: Request) {
       fetchAlerts(lat, lon),
     ]);
 
-    // Inject is_day by comparing now with sunrise/sunset
+    // Inject is_day using sunrise/sunset
     if (forecastResponse.current && forecastResponse.daily) {
       const sunrise = forecastResponse.daily.sunrise?.[0];
-      const sunset = forecastResponse.daily.sunset?.[0];
+      const sunset  = forecastResponse.daily.sunset?.[0];
 
       if (sunrise && sunset) {
         const now = new Date(forecastResponse.current.time);
         const isDay =
           now >= new Date(sunrise) && now < new Date(sunset);
 
+        // Inject into current block
         forecastResponse.current.is_day = isDay;
       }
     }
@@ -65,13 +66,13 @@ async function fetchForecast(lat: string, lon: string, unit: string) {
       "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,wind_speed_10m,wind_gusts_10m,weather_code,uv_index,time",
     hourly:
       "temperature_2m,precipitation_probability,weather_code,uv_index",
-    // ⬇️ add sunrise/sunset in daily
     daily:
       "temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code,uv_index_max,sunrise,sunset",
     forecast_days: "7",
     temperature_unit,
     wind_speed_unit,
     precipitation_unit,
+    models: "meteoconcept",  // <-- needed for sunrise/sunset fields
   });
 
   const url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
