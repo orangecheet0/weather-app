@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 type Coords = { lat: number; lon: number };
 
-// Payload shapes that match your UI
 type CurrentBlock = {
   time: string;
   temperature_2m: number | null;
@@ -13,7 +12,7 @@ type CurrentBlock = {
   weather_code: number | null;
   relative_humidity_2m: number | null;
   uv_index: number | null;
-  is_day: number | null; // 1 day, 0 night from Open‑Meteo
+  is_day: number | null; // 1 day, 0 night
 };
 
 type HourlyBlock = {
@@ -63,6 +62,8 @@ export async function GET(req: NextRequest) {
     omUrl.searchParams.set("latitude", String(lat));
     omUrl.searchParams.set("longitude", String(lon));
     omUrl.searchParams.set("timezone", tz);
+
+    // 'current' accepts variables; OK to list them.
     omUrl.searchParams.set(
       "current",
       [
@@ -76,10 +77,11 @@ export async function GET(req: NextRequest) {
         "relative_humidity_2m",
       ].join(",")
     );
+
+    // IMPORTANT: Do NOT include 'time' here; Open‑Meteo returns time automatically.
     omUrl.searchParams.set(
       "hourly",
       [
-        "time",
         "temperature_2m",
         "apparent_temperature",
         "weather_code",
@@ -89,11 +91,11 @@ export async function GET(req: NextRequest) {
         "relative_humidity_2m",
       ].join(",")
     );
+
+    // Same here: no 'time' in the variable list.
     omUrl.searchParams.set(
       "daily",
-      ["time", "temperature_2m_max", "temperature_2m_min", "weather_code"].join(
-        ","
-      )
+      ["temperature_2m_max", "temperature_2m_min", "weather_code"].join(",")
     );
 
     const [omRes, nwsRes] = await Promise.all([
