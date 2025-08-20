@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import clsx from "clsx";
 import { Loader2 } from "lucide-react";
 import { useWeather } from "@/lib/useWeather";
@@ -12,7 +12,6 @@ import DailyForecast from "@/components/DailyForecast";
 import MapPanel from "@/components/MapPanel";
 import AlertsPanel from "@/components/AlertsPanel";
 
-// Background gradient themes
 const THEMES = {
   day: "from-sky-600 to-blue-900",
   night: "from-gray-700 to-gray-900",
@@ -20,6 +19,8 @@ const THEMES = {
 
 export default function Page() {
   const [unit, setUnit] = useState<"imperial" | "metric">("imperial");
+
+  // Hook now depends on unit to fetch matching units from the API
   const {
     location,
     weatherData,
@@ -27,20 +28,23 @@ export default function Page() {
     globalError,
     requestGeolocation,
     setLocation,
-  } = useWeather();
+  } = useWeather(unit);
 
-  // TODO: add real day/night check — for now use day
   const themeKey = "day";
 
-  const placeLabel = location
-    ? `${location.name}, ${location.admin1} (${location.country})`
-    : "Loading location...";
+  const placeLabel = useMemo(() => {
+    if (!location) return "Loading location...";
+    const parts = [location.name, location.admin1, location.country]
+      .filter((p) => p && String(p).trim().length > 0)
+      .join(", ");
+    return parts || "Your Location";
+  }, [location]);
 
   return (
     <div
       className={clsx(
         "min-h-screen text-slate-100 bg-gradient-to-br transition-colors duration-1000 selection:bg-sky-300/40",
-        THEMES[themeKey]
+        THEMES[themeKey as keyof typeof THEMES]
       )}
     >
       <Header

@@ -1,7 +1,7 @@
 // app/api/weather/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
-type Coords = { lat: number; lon: number };
+type Unit = "imperial" | "metric";
 
 type CurrentBlock = {
   time: string;
@@ -51,19 +51,24 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const lat = Number(searchParams.get("lat"));
     const lon = Number(searchParams.get("lon"));
+    const unit = (searchParams.get("unit") as Unit) || "metric";
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
       return badRequest("lat/lon required");
     }
 
-    const tz = "auto";
+    // Map our unit flag to Open‑Meteo units
+    const temperature_unit = unit === "imperial" ? "fahrenheit" : "celsius";
+    const wind_speed_unit = unit === "imperial" ? "mph" : "kmh";
+    // (uv_index is unitless; precipitation defaults are fine for our UI)
 
-    // Open‑Meteo forecast
     const omUrl = new URL("https://api.open-meteo.com/v1/forecast");
     omUrl.searchParams.set("latitude", String(lat));
     omUrl.searchParams.set("longitude", String(lon));
-    omUrl.searchParams.set("timezone", tz);
+    omUrl.searchParams.set("timezone", "auto");
+    omUrl.searchParams.set("temperature_unit", temperature_unit);
+    omUrl.searchParams.set("wind_speed_unit", wind_speed_unit);
 
-    // 'current' accepts variables; OK to list them.
+    // Current variables we use
     omUrl.searchParams.set(
       "current",
       [
@@ -78,7 +83,7 @@ export async function GET(req: NextRequest) {
       ].join(",")
     );
 
-    // IMPORTANT: Do NOT include 'time' here; Open‑Meteo returns time automatically.
+    // Do NOT include 'time' in the variable lists
     omUrl.searchParams.set(
       "hourly",
       [
@@ -92,7 +97,6 @@ export async function GET(req: NextRequest) {
       ].join(",")
     );
 
-    // Same here: no 'time' in the variable list.
     omUrl.searchParams.set(
       "daily",
       ["temperature_2m_max", "temperature_2m_min", "weather_code"].join(",")
