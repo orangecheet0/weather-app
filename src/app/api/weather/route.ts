@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 type Coords = { lat: number; lon: number };
 
-// Shape the client components already expect
-export type CurrentBlock = {
+// Payload shapes that match your UI
+type CurrentBlock = {
   time: string;
   temperature_2m: number | null;
   apparent_temperature: number | null;
@@ -13,10 +13,10 @@ export type CurrentBlock = {
   weather_code: number | null;
   relative_humidity_2m: number | null;
   uv_index: number | null;
-  is_day: number | null;
+  is_day: number | null; // 1 day, 0 night from Open‑Meteo
 };
 
-export type HourlyBlock = {
+type HourlyBlock = {
   time: string[];
   temperature_2m: number[];
   apparent_temperature: number[];
@@ -27,14 +27,14 @@ export type HourlyBlock = {
   uv_index: number[];
 };
 
-export type DailyBlock = {
+type DailyBlock = {
   time: string[];
   temperature_2m_max: number[];
   temperature_2m_min: number[];
   weather_code: number[];
 };
 
-export type AlertItem = {
+type AlertItem = {
   id: string;
   event?: string;
   headline?: string;
@@ -52,7 +52,6 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const lat = Number(searchParams.get("lat"));
     const lon = Number(searchParams.get("lon"));
-
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
       return badRequest("lat/lon required");
     }
@@ -64,8 +63,6 @@ export async function GET(req: NextRequest) {
     omUrl.searchParams.set("latitude", String(lat));
     omUrl.searchParams.set("longitude", String(lon));
     omUrl.searchParams.set("timezone", tz);
-
-    // Request current, hourly, daily data that your UI uses
     omUrl.searchParams.set(
       "current",
       [
@@ -101,7 +98,6 @@ export async function GET(req: NextRequest) {
 
     const [omRes, nwsRes] = await Promise.all([
       fetch(omUrl.toString(), { next: { revalidate: 300 } }),
-      // NWS alerts (needs a UA)
       fetch(
         `https://api.weather.gov/alerts/active?point=${lat.toFixed(
           4
@@ -114,7 +110,7 @@ export async function GET(req: NextRequest) {
           },
           next: { revalidate: 120 },
         }
-      ).catch(() => null), // don’t fail if NWS is unhappy
+      ).catch(() => null),
     ]);
 
     if (!omRes.ok) {
@@ -150,7 +146,6 @@ export async function GET(req: NextRequest) {
     const daily: DailyBlock = {
       time: omJson?.daily?.time ?? [],
       temperature_2m_max: omJson?.daily?.temperature_2m_max ?? [],
-      temperature_2_m_min: undefined as never, // just to guard typos at author time
       temperature_2m_min: omJson?.daily?.temperature_2m_min ?? [],
       weather_code: omJson?.daily?.weather_code ?? [],
     };
@@ -169,15 +164,7 @@ export async function GET(req: NextRequest) {
       }));
     }
 
-    return NextResponse.json(
-      {
-        current,
-        hourly,
-        daily,
-        alerts,
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({ current, hourly, daily, alerts }, { status: 200 });
   } catch (err: any) {
     console.error("Error in weather API route:", err);
     return NextResponse.json(
