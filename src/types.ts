@@ -14,14 +14,15 @@ export interface LocationState {
 
 export interface CurrentBlock {
   time: string;
-  temperature_2m: number;
-  relative_humidity_2m: number | null;
+  temperature_2m: number | null;
   apparent_temperature: number | null;
-  precipitation: number | null;
   wind_speed_10m: number | null;
   wind_gusts_10m: number | null;
   weather_code: number | null;
-  uv_index?: number | null;
+  relative_humidity_2m: number | null;
+  uv_index: number | null;
+  /** 1 = day, 0 = night (from Open‑Meteo) */
+  is_day?: number;
 }
 
 export interface DailyBlock {

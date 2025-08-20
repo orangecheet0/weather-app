@@ -37,6 +37,12 @@ export default function CurrentWeatherCard({
   data: CurrentBlock;
   unit: Unit;
 }) {
+  // is_day is 1 for day, 0 for night (Open‑Meteo). If missing, assume day.
+  const isDay =
+    typeof (data as any).is_day === "number"
+      ? Boolean((data as any).is_day)
+      : true;
+
   return (
     <div className="rounded-xl bg-slate-900/60 p-6 ring-1 ring-white/10 backdrop-blur-md shadow-xl">
       <div className="flex items-center justify-between mb-4">
@@ -48,7 +54,7 @@ export default function CurrentWeatherCard({
         {/* Left */}
         <div className="flex items-center gap-4">
           <div className="text-sky-300 text-6xl">
-            weatherIcon(data.weather_code, !!data.is_day)
+            {weatherIcon(data.weather_code ?? 0, isDay)}
           </div>
           <div className="text-6xl font-light tracking-tighter">
             {formatTemp(data.temperature_2m, unit)}

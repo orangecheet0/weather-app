@@ -1,104 +1,188 @@
-import { NextResponse } from "next/server";
+// app/api/weather/route.ts
+import { NextRequest, NextResponse } from "next/server";
 
-const validUnits = ["imperial", "metric", "standard"];
+type Coords = { lat: number; lon: number };
 
-export async function GET(request: Request) {
+// Shape the client components already expect
+export type CurrentBlock = {
+  time: string;
+  temperature_2m: number | null;
+  apparent_temperature: number | null;
+  wind_speed_10m: number | null;
+  wind_gusts_10m: number | null;
+  weather_code: number | null;
+  relative_humidity_2m: number | null;
+  uv_index: number | null;
+  is_day: number | null;
+};
+
+export type HourlyBlock = {
+  time: string[];
+  temperature_2m: number[];
+  apparent_temperature: number[];
+  weather_code: number[];
+  wind_speed_10m: number[];
+  wind_gusts_10m: number[];
+  relative_humidity_2m: number[];
+  uv_index: number[];
+};
+
+export type DailyBlock = {
+  time: string[];
+  temperature_2m_max: number[];
+  temperature_2m_min: number[];
+  weather_code: number[];
+};
+
+export type AlertItem = {
+  id: string;
+  event?: string;
+  headline?: string;
+  description?: string;
+  instruction?: string;
+  areaDesc?: string;
+};
+
+function badRequest(msg: string, detail?: unknown) {
+  return NextResponse.json({ error: msg, detail }, { status: 400 });
+}
+
+export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const lat = searchParams.get("lat");
-    const lon = searchParams.get("lon");
-    const unit = searchParams.get("unit") || "imperial";
+    const { searchParams } = new URL(req.url);
+    const lat = Number(searchParams.get("lat"));
+    const lon = Number(searchParams.get("lon"));
 
-    if (!validUnits.includes(unit)) {
-      return NextResponse.json({ error: "Invalid unit" }, { status: 400 });
-    }
-    if (!lat || !lon) {
-      return NextResponse.json(
-        { error: "Latitude and longitude are required" },
-        { status: 400 }
-      );
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return badRequest("lat/lon required");
     }
 
-    const [forecastResponse, alertsResponse] = await Promise.all([
-      fetchForecast(lat, lon, unit),
-      fetchAlerts(lat, lon),
+    const tz = "auto";
+
+    // Open‑Meteo forecast
+    const omUrl = new URL("https://api.open-meteo.com/v1/forecast");
+    omUrl.searchParams.set("latitude", String(lat));
+    omUrl.searchParams.set("longitude", String(lon));
+    omUrl.searchParams.set("timezone", tz);
+
+    // Request current, hourly, daily data that your UI uses
+    omUrl.searchParams.set(
+      "current",
+      [
+        "temperature_2m",
+        "apparent_temperature",
+        "is_day",
+        "weather_code",
+        "uv_index",
+        "wind_speed_10m",
+        "wind_gusts_10m",
+        "relative_humidity_2m",
+      ].join(",")
+    );
+    omUrl.searchParams.set(
+      "hourly",
+      [
+        "time",
+        "temperature_2m",
+        "apparent_temperature",
+        "weather_code",
+        "uv_index",
+        "wind_speed_10m",
+        "wind_gusts_10m",
+        "relative_humidity_2m",
+      ].join(",")
+    );
+    omUrl.searchParams.set(
+      "daily",
+      ["time", "temperature_2m_max", "temperature_2m_min", "weather_code"].join(
+        ","
+      )
+    );
+
+    const [omRes, nwsRes] = await Promise.all([
+      fetch(omUrl.toString(), { next: { revalidate: 300 } }),
+      // NWS alerts (needs a UA)
+      fetch(
+        `https://api.weather.gov/alerts/active?point=${lat.toFixed(
+          4
+        )},${lon.toFixed(4)}`,
+        {
+          headers: {
+            "User-Agent":
+              "alweather.org (contact@alweather.org) – personal non-commercial",
+            Accept: "application/geo+json",
+          },
+          next: { revalidate: 120 },
+        }
+      ).catch(() => null), // don’t fail if NWS is unhappy
     ]);
 
-    // Compute is_day using sunrise/sunset for the first day
-    if (forecastResponse.current && forecastResponse.daily) {
-      const sunrise = forecastResponse.daily.sunrise?.[0];
-      const sunset  = forecastResponse.daily.sunset?.[0];
-
-      if (sunrise && sunset) {
-        const now = new Date(forecastResponse.current.time);
-        const isDay =
-          now >= new Date(sunrise) && now < new Date(sunset);
-
-        forecastResponse.current.is_day = isDay;
-      }
+    if (!omRes.ok) {
+      const text = await omRes.text().catch(() => "");
+      throw new Error(`Open-Meteo failed (${omRes.status}): ${text.slice(0, 200)}`);
     }
 
-    return NextResponse.json({
-      ...forecastResponse,
-      alerts: alertsResponse,
-    });
-  } catch (error) {
-    console.error("Error in weather API route:", error);
+    const omJson = (await omRes.json()) as any;
+
+    const current: CurrentBlock = {
+      time: omJson?.current?.time ?? null,
+      temperature_2m: omJson?.current?.temperature_2m ?? null,
+      apparent_temperature: omJson?.current?.apparent_temperature ?? null,
+      wind_speed_10m: omJson?.current?.wind_speed_10m ?? null,
+      wind_gusts_10m: omJson?.current?.wind_gusts_10m ?? null,
+      weather_code: omJson?.current?.weather_code ?? null,
+      relative_humidity_2m: omJson?.current?.relative_humidity_2m ?? null,
+      uv_index: omJson?.current?.uv_index ?? null,
+      is_day: omJson?.current?.is_day ?? null,
+    };
+
+    const hourly: HourlyBlock = {
+      time: omJson?.hourly?.time ?? [],
+      temperature_2m: omJson?.hourly?.temperature_2m ?? [],
+      apparent_temperature: omJson?.hourly?.apparent_temperature ?? [],
+      weather_code: omJson?.hourly?.weather_code ?? [],
+      uv_index: omJson?.hourly?.uv_index ?? [],
+      wind_speed_10m: omJson?.hourly?.wind_speed_10m ?? [],
+      wind_gusts_10m: omJson?.hourly?.wind_gusts_10m ?? [],
+      relative_humidity_2m: omJson?.hourly?.relative_humidity_2m ?? [],
+    };
+
+    const daily: DailyBlock = {
+      time: omJson?.daily?.time ?? [],
+      temperature_2m_max: omJson?.daily?.temperature_2m_max ?? [],
+      temperature_2_m_min: undefined as never, // just to guard typos at author time
+      temperature_2m_min: omJson?.daily?.temperature_2m_min ?? [],
+      weather_code: omJson?.daily?.weather_code ?? [],
+    };
+
+    let alerts: AlertItem[] = [];
+    if (nwsRes && nwsRes.ok) {
+      const nws = (await nwsRes.json()) as any;
+      const features: any[] = nws?.features ?? [];
+      alerts = features.map((f) => ({
+        id: f?.id ?? crypto.randomUUID(),
+        event: f?.properties?.event,
+        headline: f?.properties?.headline,
+        description: f?.properties?.description,
+        instruction: f?.properties?.instruction,
+        areaDesc: f?.properties?.areaDesc,
+      }));
+    }
+
     return NextResponse.json(
-      { error: "Failed to fetch weather data" },
+      {
+        current,
+        hourly,
+        daily,
+        alerts,
+      },
+      { status: 200 }
+    );
+  } catch (err: any) {
+    console.error("Error in weather API route:", err);
+    return NextResponse.json(
+      { error: "Failed to fetch forecast data from Open-Meteo" },
       { status: 500 }
     );
-  }
-}
-
-async function fetchForecast(lat: string, lon: string, unit: string) {
-  const temperature_unit = unit === "imperial" ? "fahrenheit" : "celsius";
-  const wind_speed_unit = unit === "imperial" ? "mph" : "kmh";
-  const precipitation_unit = unit === "imperial" ? "inch" : "mm";
-
-  const params = new URLSearchParams({
-    latitude: lat,
-    longitude: lon,
-    timezone: "auto",
-    current:
-      "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,wind_speed_10m,wind_gusts_10m,weather_code,uv_index,time",
-    hourly:
-      "temperature_2m,precipitation_probability,weather_code,uv_index",
-    // ✅ Remove daily weather_code, keep sunrise/sunset
-    daily:
-      "temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max,sunrise,sunset",
-    forecast_days: "7",
-    temperature_unit,
-    wind_speed_unit,
-    precipitation_unit,
-    models: "meteoconcept",
-  });
-
-  const url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch forecast data from Open-Meteo");
-  }
-
-  return res.json();
-}
-
-async function fetchAlerts(lat: string, lon: string) {
-  try {
-    const url = `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
-    const res = await fetch(url, {
-      headers: { Accept: "application/geo+json" },
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!res.ok) return [];
-    const data = await res.json();
-
-    return Array.isArray(data?.features)
-      ? data.features.map((f: any) => f.properties)
-      : [];
-  } catch {
-    return [];
   }
 }

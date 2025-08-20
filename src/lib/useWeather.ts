@@ -1,92 +1,104 @@
+// lib/useWeather.ts
 "use client";
 
-import { useState, useEffect } from "react";
-import type { Coords, LocationState, WeatherData } from "../types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+export type Unit = "imperial" | "metric";
+
+export type Coords = { lat: number; lon: number };
+
+export type SearchCandidate = {
+  coords: Coords;
+  name: string;
+  admin1?: string | null;
+  country?: string | null;
+};
+
+export type LocationState = SearchCandidate & {};
+
+type WeatherData = {
+  current: any;
+  hourly: any;
+  daily: any;
+  alerts: any[];
+};
+
+const MADISON_AL: LocationState = {
+  name: "Madison",
+  admin1: "Alabama",
+  country: "US",
+  coords: { lat: 34.6993, lon: -86.7483 },
+};
 
 export function useWeather() {
-  const [location, setLocation] = useState<LocationState | null>(null);
+  const [location, setLocation] = useState<LocationState | null>(MADISON_AL);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
-  // Reverse geocode from lat/lon
-  async function reverseLookup(c: Coords): Promise<LocationState> {
+  const fetchWeather = useCallback(async (coords: Coords) => {
+    setIsLoading(true);
+    setGlobalError(null);
     try {
-      const res = await fetch(
-        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${c.lat}&longitude=${c.lon}&localityLanguage=en`
-      );
-      const j = await res.json();
-      return {
-        coords: c,
-        name: j.city || j.locality || "Your area",
-        admin1: j.principalSubdivision,
-        country: j.countryCode,
-      };
-    } catch {
-      return { coords: c, name: "Unknown location" };
+      const qs = new URLSearchParams({
+        lat: String(coords.lat),
+        lon: String(coords.lon),
+      });
+      const res = await fetch(`/api/weather?${qs.toString()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`API error ${res.status}: ${txt.slice(0, 200)}`);
+      }
+      const json = (await res.json()) as WeatherData;
+      setWeatherData(json);
+    } catch (err: any) {
+      console.error("Weather fetch failed:", err);
+      setGlobalError("Unable to fetch weather data.");
+      setWeatherData(null);
+    } finally {
+      setIsLoading(false);
     }
-  }
+  }, []);
 
-  // Get the user’s geolocation and reverse lookup
-  async function requestGeolocation(): Promise<LocationState | null> {
-    if (!navigator.geolocation) {
-      setGlobalError("Your browser doesn’t support geolocation.");
+  useEffect(() => {
+    if (location?.coords) {
+      fetchWeather(location.coords);
+    }
+  }, [location, fetchWeather]);
+
+  const requestGeolocation = useCallback(async () => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setGlobalError("Geolocation unavailable in this browser.");
       return null;
     }
-
-    return new Promise((resolve) => {
+    return new Promise<LocationState | null>((resolve) => {
       navigator.geolocation.getCurrentPosition(
-        async (pos) => {
+        (pos) => {
           const coords = {
             lat: pos.coords.latitude,
             lon: pos.coords.longitude,
           };
-          const loc = await reverseLookup(coords);
+          const loc: LocationState = {
+            coords,
+            name: "Your Location",
+            admin1: "",
+            country: "",
+          };
+          setLocation(loc);
           resolve(loc);
         },
-        () => {
-          setGlobalError("Could not get your location. Please allow location access.");
+        (err) => {
+          console.warn("Geolocation error:", err);
+          setGlobalError("Permission denied for geolocation.");
           resolve(null);
         },
-        { timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 300000 }
       );
     });
-  }
-
-  // Fetch weather + alerts
-  async function fetchWeatherData(coords: Coords): Promise<WeatherData | null> {
-    try {
-      const qs = new URLSearchParams({
-        lat: coords.lat.toString(),
-        lon: coords.lon.toString(),
-        unit: "imperial",
-      });
-      const res = await fetch(`/api/weather?${qs.toString()}`);
-      if (!res.ok) throw new Error("Weather fetch failed");
-      return await res.json();
-    } catch {
-      setGlobalError("Unable to fetch weather data.");
-      return null;
-    }
-  }
-
-  // Auto-fetch on mount
-  useEffect(() => {
-    (async () => {
-      setIsLoading(true);
-      const loc = await requestGeolocation();
-      if (!loc) {
-        setIsLoading(false);
-        return;
-      }
-      setLocation(loc);
-      const data = await fetchWeatherData(loc.coords);
-      setWeatherData(data);
-      setIsLoading(false);
-    })();
   }, []);
 
-  // 👉 Return all values / setters the page might need
   return {
     location,
     weatherData,
