@@ -171,19 +171,22 @@ export function weatherIcon(code: number, isDay: boolean = true) {
 
 /**
  * Windy embed URL builder.
- * - Forces IMPERIAL when unit === "imperial":
+ * - When unit === "imperial":
  *    - metricTemp=us (Windy's flag for Fahrenheit)
  *    - metricWind=mph
- * - Uses metric defaults when unit === "metric".
+ *    - metricRain=in
+ * - When unit === "metric":
+ *    - metricTemp=°C
+ *    - metricWind=km/h
+ *    - metricRain=mm
  */
 export function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
   const { lat, lon } = coords;
 
-  // Windy expects specific metric flags:
-  //  - metricTemp: "us" for Fahrenheit; otherwise use "°C"
-  //  - metricWind: "mph" | "km/h" | "m/s" | "kt" | "bft"
+  // Windy expects specific metric flags for display units
   const metricTemp = unit === "imperial" ? "us" : "°C";
   const metricWind = unit === "imperial" ? "mph" : "km/h";
+  const metricRain = unit === "imperial" ? "in" : "mm";
 
   const p = new URLSearchParams({
     lat: lat.toFixed(6),
@@ -203,8 +206,9 @@ export function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
     type: "map",
     location: "coordinates",
     calendar: "now",
-    metricWind,
     metricTemp,
+    metricWind,
+    metricRain, // 👈 ensures rainfall shows as in/hr in imperial
   });
 
   return `https://embed.windy.com/embed2.html?${p.toString()}`;
