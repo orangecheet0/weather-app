@@ -46,11 +46,33 @@ function badRequest(msg: string, detail?: unknown) {
   return NextResponse.json({ error: msg, detail }, { status: 400 });
 }
 
-const NWS_HEADERS = {
-  "User-Agent":
-    "alweather.org (contact@alweather.org) – personal non-commercial",
+/** NWS prefers a plain ASCII UA with contact info */
+const NWS_HEADERS: HeadersInit = {
+  "User-Agent": "alweather.org contact@alweather.org",
   Accept: "application/geo+json",
+  "Cache-Control": "no-cache",
 };
+
+/** Tiny retry helper for NWS (handles network hiccups) */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  tries = 2
+): Promise<Response | null> {
+  let lastErr: unknown = null;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(url, init);
+      return r;
+    } catch (e) {
+      lastErr = e;
+      // brief backoff
+      await new Promise((res) => setTimeout(res, 120 + i * 120));
+    }
+  }
+  console.warn("NWS fetch failed after retries:", url, lastErr);
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -62,7 +84,7 @@ export async function GET(req: NextRequest) {
       return badRequest("lat/lon required");
     }
 
-    // ---- Open-Meteo (respect units) -------------------------------------------------
+    // ---------- Open‑Meteo (units respected) ----------
     const temperature_unit = unit === "imperial" ? "fahrenheit" : "celsius";
     const wind_speed_unit = unit === "imperial" ? "mph" : "kmh";
 
@@ -102,30 +124,28 @@ export async function GET(req: NextRequest) {
       ["temperature_2m_max", "temperature_2m_min", "weather_code"].join(",")
     );
 
-    // ---- NWS alerts (point + zone fallback) -----------------------------------------
-    const pointUrl = `https://api.weather.gov/alerts/active?point=${lat.toFixed(
+    // ---------- NWS endpoints (point + zone fallback) ----------
+    const pointAlertsUrl = `https://api.weather.gov/alerts/active?point=${lat.toFixed(
+      4
+    )},${lon.toFixed(4)}`;
+    const pointsUrl = `https://api.weather.gov/points/${lat.toFixed(
       4
     )},${lon.toFixed(4)}`;
 
-    // Also prepare a request for zones via points endpoint
-    const zonesInfoUrl = `https://api.weather.gov/points/${lat.toFixed(
-      4
-    )},${lon.toFixed(4)}`;
-
-    const [omRes, pointRes, zonesInfoRes] = await Promise.all([
+    // Fetch OM + NWS in parallel
+    const [omRes, pointRes, pointsRes] = await Promise.all([
       fetch(omUrl.toString(), { next: { revalidate: 300 } }),
-      fetch(pointUrl, { headers: NWS_HEADERS, next: { revalidate: 120 } }).catch(
-        () => null
-      ),
-      fetch(zonesInfoUrl, { headers: NWS_HEADERS, next: { revalidate: 300 } }).catch(
-        () => null
-      ),
+      fetchWithRetry(pointAlertsUrl, { headers: NWS_HEADERS, next: { revalidate: 120 } }),
+      fetchWithRetry(pointsUrl, { headers: NWS_HEADERS, next: { revalidate: 300 } }),
     ]);
 
-    if (!omRes.ok) {
-      const text = await omRes.text().catch(() => "");
+    if (!omRes?.ok) {
+      const text = await omRes?.text().catch(() => "");
       throw new Error(
-        `Open-Meteo failed (${omRes.status}): ${text.slice(0, 200)}`
+        `Open-Meteo failed (${omRes?.status ?? "noresp"}): ${String(text).slice(
+          0,
+          200
+        )}`
       );
     }
     const omJson = (await omRes.json()) as any;
@@ -160,9 +180,9 @@ export async function GET(req: NextRequest) {
       weather_code: omJson?.daily?.weather_code ?? [],
     };
 
-    // ---- Build alerts from point + zone fallback ------------------------------------
+    // ---------- Build alerts via point first ----------
     const alertsSet = new Map<string, AlertItem>();
-    const addAlerts = (features: any[] | undefined | null) => {
+    const addAlerts = (features?: any[]) => {
       (features ?? []).forEach((f) => {
         const id = f?.id ?? crypto.randomUUID();
         if (!alertsSet.has(id)) {
@@ -178,54 +198,60 @@ export async function GET(req: NextRequest) {
       });
     };
 
-    // 1) Try point
     let pointOk = false;
     let pointStatus = 0;
     if (pointRes) {
       pointOk = pointRes.ok;
-      pointStatus = pointRes.status;
+      pointStatus = pointRes.status ?? 0;
       try {
-        const json = await pointRes.json();
+        const json = await pointRes.json().catch(async () => {
+          // If HTML or bad JSON, try text to avoid throwing
+          await pointRes.text();
+          return null;
+        });
         addAlerts(json?.features);
       } catch {
-        // ignore parse errors
+        // ignore parse error
       }
     }
 
-    // 2) If none found via point, try zones
-    let zonesFetched: string[] = [];
-    if (alertsSet.size === 0 && zonesInfoRes && zonesInfoRes.ok) {
+    // ---------- Zone fallback (even if point failed) ----------
+    const zonesUsed: string[] = [];
+    if (alertsSet.size === 0 && pointsRes && pointsRes.ok) {
       try {
-        const info = await zonesInfoRes.json();
+        const info = await pointsRes.json();
         const props = info?.properties ?? {};
-        const zoneCandidates = [
-          props?.forecastZone,
-          props?.county,
-          props?.fireWeatherZone,
-        ]
+        // props.forecastZone / county / fireWeatherZone are URLs like ".../zones/forecast/ALZ001"
+        const zoneUrls = [props?.forecastZone, props?.county, props?.fireWeatherZone]
           .filter(Boolean)
           .map(String);
 
-        // Fetch alerts for each zone id (urls already absolute)
-        const zoneFetches = zoneCandidates.map((zoneUrl) =>
-          fetch(
-            `https://api.weather.gov/alerts/active?zone=${encodeURIComponent(
-              zoneUrl.split("/").pop() as string
-            )}`,
-            { headers: NWS_HEADERS, next: { revalidate: 120 } }
-          ).catch(() => null)
-        );
+        // Extract "ALZ001" etc.
+        const zoneIds = zoneUrls
+          .map((z) => z.split("/").pop() as string)
+          .filter(Boolean);
 
-        const zoneResList = await Promise.all(zoneFetches);
-        for (let i = 0; i < zoneResList.length; i++) {
-          const r = zoneResList[i];
+        // Fetch each zone's alerts with retry
+        const zoneFetches = zoneIds.map((id) =>
+          fetchWithRetry(
+            `https://api.weather.gov/alerts/active?zone=${encodeURIComponent(id)}`,
+            { headers: NWS_HEADERS, next: { revalidate: 120 } }
+          )
+        );
+        const zoneResps = await Promise.all(zoneFetches);
+
+        for (let i = 0; i < zoneResps.length; i++) {
+          const r = zoneResps[i];
           if (r && r.ok) {
-            zonesFetched.push(zoneCandidates[i] as string);
+            zonesUsed.push(zoneIds[i]!);
             try {
-              const json = await r.json();
-              addAlerts(json?.features);
+              const j = await r.json().catch(async () => {
+                await r.text();
+                return null;
+              });
+              addAlerts(j?.features);
             } catch {
-              // ignore parse errors
+              // ignore
             }
           }
         }
@@ -235,10 +261,9 @@ export async function GET(req: NextRequest) {
     }
 
     const alerts = Array.from(alertsSet.values());
-
     const alerts_meta = {
-      point: { ok: pointOk, status: pointStatus, url: pointUrl },
-      zonesUsed: zonesFetched,
+      point: { ok: pointOk, status: pointStatus, url: pointAlertsUrl },
+      zonesUsed,
       count: alerts.length,
     };
 
