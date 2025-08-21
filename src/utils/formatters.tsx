@@ -123,7 +123,7 @@ export function shortDate(isoOrYmd: string) {
     weekday: "short",
     month: "short",
     day: "numeric",
-    });
+  });
 }
 
 export function shortTime(iso: string) {
@@ -168,10 +168,23 @@ export function weatherIcon(code: number, isDay: boolean = true) {
       return isDay ? <Sun /> : <Moon />;
   }
 }
+
+/**
+ * Windy embed URL builder.
+ * - Forces IMPERIAL when unit === "imperial":
+ *    - metricTemp=us (Windy's flag for Fahrenheit)
+ *    - metricWind=mph
+ * - Uses metric defaults when unit === "metric".
+ */
 export function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
   const { lat, lon } = coords;
-  const metricTemp = unit === "imperial" ? "°F" : "°C";
+
+  // Windy expects specific metric flags:
+  //  - metricTemp: "us" for Fahrenheit; otherwise use "°C"
+  //  - metricWind: "mph" | "km/h" | "m/s" | "kt" | "bft"
+  const metricTemp = unit === "imperial" ? "us" : "°C";
   const metricWind = unit === "imperial" ? "mph" : "km/h";
+
   const p = new URLSearchParams({
     lat: lat.toFixed(6),
     lon: lon.toFixed(6),
