@@ -20,7 +20,6 @@ const THEMES = {
 export default function Page() {
   const [unit, setUnit] = useState<"imperial" | "metric">("imperial");
 
-  // Hook now depends on unit to fetch matching units from the API
   const {
     location,
     weatherData,
@@ -55,7 +54,7 @@ export default function Page() {
       />
 
       <main className="mx-auto max-w-[1280px] px-4 py-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-8">{placeLabel}</h1>
+        <h1 className="mb-8 text-3xl font-bold tracking-tight">{placeLabel}</h1>
 
         {globalError && (
           <div className="mb-8 rounded-lg bg-red-900/50 p-4 text-center text-red-100 ring-1 ring-red-500/50">
@@ -71,29 +70,33 @@ export default function Page() {
         )}
 
         {!isLoading && weatherData && location && (
-          <div className="grid gap-x-8 gap-y-10 md:grid-cols-1 lg:grid-cols-3">
-            <div className="space-y-10 lg:col-span-2">
-              <div className="bg-slate-900/60 backdrop-blur-md shadow-xl rounded-2xl p-6">
-                <CurrentWeatherCard data={weatherData.current} unit={unit} />
+          <div className="space-y-8">
+            {/* Top grid: left column (current + hourly + alerts), right column (7‑day) */}
+            <div className="grid gap-x-8 gap-y-10 md:grid-cols-1 lg:grid-cols-3">
+              <div className="space-y-10 lg:col-span-2">
+                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md">
+                  <CurrentWeatherCard data={weatherData.current} unit={unit} />
+                </div>
+
+                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md">
+                  <HourlyForecast data={weatherData.hourly} unit={unit} />
+                </div>
+
+                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md">
+                  <AlertsPanel alerts={weatherData.alerts} />
+                </div>
               </div>
 
-              <div className="bg-slate-900/60 backdrop-blur-md shadow-xl rounded-2xl p-6">
-                <HourlyForecast data={weatherData.hourly} unit={unit} />
-              </div>
-
-              <div className="bg-slate-900/60 backdrop-blur-md shadow-xl rounded-2xl p-6">
-                <AlertsPanel alerts={weatherData.alerts} />
+              <div className="space-y-10">
+                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md">
+                  <DailyForecast data={weatherData.daily} unit={unit} />
+                </div>
               </div>
             </div>
 
-            <div className="space-y-10">
-              <div className="bg-slate-900/60 backdrop-blur-md shadow-xl rounded-2xl p-6">
-                <DailyForecast data={weatherData.daily} unit={unit} />
-              </div>
-
-              <div className="bg-slate-900/60 backdrop-blur-md shadow-xl rounded-2xl p-6">
-                <MapPanel coords={location.coords} unit={unit} />
-              </div>
+            {/* Full‑width Windy map BELOW alerts */}
+            <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md">
+              <MapPanel coords={location.coords} unit={unit} />
             </div>
           </div>
         )}
