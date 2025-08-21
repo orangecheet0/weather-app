@@ -9,30 +9,36 @@ export default function HourlyForecast({
   data: HourlyBlock;
   unit: Unit;
 }) {
-  // Show the next 12 hours
   const startIndex = 0;
   const endIndex = Math.min(data.time.length, 12);
 
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Hourly Forecast</h2>
-      <div className="grid grid-cols-3 gap-4 sm:grid-cols-6 lg:grid-cols-12">
-        {data.time.slice(startIndex, endIndex).map((t, i) => (
-          <div
-            key={t}
-            className="flex flex-col items-center rounded-lg bg-slate-900/60 p-2 backdrop-blur-md ring-1 ring-white/10"
-          >
-            <p className="text-sm font-medium">{shortTime(t)}</p>
 
-            <div className="mx-auto flex h-6 w-6 items-center justify-center text-sky-300">
-              {weatherIcon((data.weather_code[startIndex + i] ?? 0), true)}
-            </div>
+      {/* Horizontal scroller for tight layouts */}
+      <div className="overflow-x-auto">
+        <div className="flex gap-3 px-1 pb-2 snap-x snap-mandatory">
+          {data.time.slice(startIndex, endIndex).map((t, i) => {
+            const idx = startIndex + i;
+            return (
+              <div
+                key={t}
+                className="snap-start flex flex-col items-center justify-between rounded-lg bg-slate-900/60 px-3 py-3 backdrop-blur-md ring-1 ring-white/10 shadow-sm min-w-[78px] flex-shrink-0"
+              >
+                <p className="text-xs font-medium text-slate-200">{shortTime(t)}</p>
 
-            <p className="font-semibold">
-              {formatTemp(data.temperature_2m[startIndex + i], unit)}
-            </p>
-          </div>
-        ))}
+                <div className="flex h-7 w-7 items-center justify-center text-sky-300">
+                  {weatherIcon(data.weather_code[idx] ?? 0, true)}
+                </div>
+
+                <p className="text-sm font-semibold">
+                  {formatTemp(data.temperature_2m[idx], unit)}
+                </p>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
