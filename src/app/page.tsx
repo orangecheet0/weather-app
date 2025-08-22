@@ -29,7 +29,13 @@ export default function Page() {
     setLocation,
   } = useWeather(unit);
 
-  const themeKey = "day";
+  // Choose theme dynamically: default to 'day' until data arrives
+  const themeKey: keyof typeof THEMES = useMemo(() => {
+    const isDayRaw = weatherData?.current?.is_day;
+    if (typeof isDayRaw === "number") return isDayRaw ? "day" : "night";
+    if (typeof isDayRaw === "boolean") return isDayRaw ? "day" : "night";
+    return "day";
+  }, [weatherData?.current?.is_day]);
 
   const placeLabel = useMemo(() => {
     if (!location) return "Loading location...";
@@ -43,7 +49,7 @@ export default function Page() {
     <div
       className={clsx(
         "min-h-screen text-slate-100 bg-gradient-to-br transition-colors duration-1000 selection:bg-sky-300/40",
-        THEMES[themeKey as keyof typeof THEMES]
+        THEMES[themeKey]
       )}
     >
       <Header
