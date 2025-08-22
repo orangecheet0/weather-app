@@ -138,11 +138,9 @@ export function shortTime(iso: string) {
 export function weatherIcon(code: number, isDay: boolean = true) {
   switch (code) {
     case 0:
-      // Clear sky
       return isDay ? <Sun /> : <Moon />;
     case 1:
     case 2:
-      // Mainly clear / partly cloudy
       return isDay ? <Sun /> : <Moon />;
     case 3:
       return <Cloud />;
@@ -164,7 +162,6 @@ export function weatherIcon(code: number, isDay: boolean = true) {
     case 95:
       return <CloudLightning />;
     default:
-      // Fallback
       return isDay ? <Sun /> : <Moon />;
   }
 }
@@ -174,7 +171,7 @@ export function weatherIcon(code: number, isDay: boolean = true) {
  * - When unit === "imperial":
  *    - metricTemp=us (Windy's flag for Fahrenheit)
  *    - metricWind=mph
- *    - metricRain=in
+ *    - metricRain=inch  ✅ (fixed)
  * - When unit === "metric":
  *    - metricTemp=°C
  *    - metricWind=km/h
@@ -183,10 +180,9 @@ export function weatherIcon(code: number, isDay: boolean = true) {
 export function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
   const { lat, lon } = coords;
 
-  // Windy expects specific metric flags for display units
   const metricTemp = unit === "imperial" ? "us" : "°C";
   const metricWind = unit === "imperial" ? "mph" : "km/h";
-  const metricRain = unit === "imperial" ? "in" : "mm";
+  const metricRain = unit === "imperial" ? "inch" : "mm"; // ✅ fixed
 
   const p = new URLSearchParams({
     lat: lat.toFixed(6),
@@ -208,31 +204,8 @@ export function windyUrl(coords: Coords, unit: Unit, zoom = 8): string {
     calendar: "now",
     metricTemp,
     metricWind,
-    metricRain, // 👈 ensures rainfall shows as in/hr in imperial
+    metricRain,
   });
 
-  return `https://embed.windy.com/embed2.html?${p.toString()}`;
+  return `https://embed.windy.com/embed2?${p.toString()}`;
 }
-
-export function pickTheme(code: number | null | undefined, isoTime?: string): ThemeKey {
-  const hour = isoTime ? new Date(isoTime).getHours() : new Date().getHours();
-  const night = hour < 6 || hour >= 18;
-
-  if (code == null) return night ? "clearNight" : "cloudy";
-  if ([95, 96, 99].includes(code)) return "storm";
-  if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return "rain";
-  if ([71, 73, 75, 77, 85, 86].includes(code)) return "snow";
-
-  if (night) return "clearNight";
-  if ([1, 2, 3, 45, 48].includes(code)) return "cloudy";
-
-  return "clearDay";
-}
-
-export type ThemeKey =
-  | "clearDay"
-  | "clearNight"
-  | "cloudy"
-  | "rain"
-  | "snow"
-  | "storm";
