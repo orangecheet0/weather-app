@@ -40,7 +40,7 @@ export default function CurrentWeatherCard({
   const isDay = typeof data.is_day === "number" ? Boolean(data.is_day) : true;
 
   return (
-    <div className="rounded-xl bg-slate-900/60 p-6 ring-1 ring-white/10 backdrop-blur-md shadow-xl">
+    <div className="rounded-xl bg-slate-900/60 p-6 ring-1 ring-white/10 backdrop-blur-md shadow-xl overflow-hidden">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Current Weather</h2>
         <p className="text-sm text-slate-300">{shortTime(data.time)}</p>

@@ -29,13 +29,7 @@ export default function Page() {
     setLocation,
   } = useWeather(unit);
 
-  // Choose theme dynamically: default to 'day' until data arrives
-  const themeKey: keyof typeof THEMES = useMemo(() => {
-    const isDayRaw = weatherData?.current?.is_day;
-    if (typeof isDayRaw === "number") return isDayRaw ? "day" : "night";
-    if (typeof isDayRaw === "boolean") return isDayRaw ? "day" : "night";
-    return "day";
-  }, [weatherData?.current?.is_day]);
+  const themeKey = "day";
 
   const placeLabel = useMemo(() => {
     if (!location) return "Loading location...";
@@ -49,7 +43,7 @@ export default function Page() {
     <div
       className={clsx(
         "min-h-screen text-slate-100 bg-gradient-to-br transition-colors duration-1000 selection:bg-sky-300/40",
-        THEMES[themeKey]
+        THEMES[themeKey as keyof typeof THEMES]
       )}
     >
       <Header
@@ -80,28 +74,28 @@ export default function Page() {
             {/* Top grid: left column (current + hourly + alerts), right column (7‑day) */}
             <div className="grid gap-x-8 gap-y-10 md:grid-cols-1 lg:grid-cols-3">
               <div className="space-y-10 lg:col-span-2">
-                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md">
+                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md overflow-hidden">
                   <CurrentWeatherCard data={weatherData.current} unit={unit} />
                 </div>
 
-                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md">
+                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md overflow-hidden">
                   <HourlyForecast data={weatherData.hourly} unit={unit} />
                 </div>
 
-                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md">
+                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md overflow-hidden">
                   <AlertsPanel alerts={weatherData.alerts} />
                 </div>
               </div>
 
               <div className="space-y-10">
-                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md">
+                <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md overflow-hidden">
                   <DailyForecast data={weatherData.daily} unit={unit} />
                 </div>
               </div>
             </div>
 
             {/* Full‑width Windy map BELOW alerts */}
-            <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md">
+            <div className="rounded-2xl bg-slate-900/60 p-6 shadow-xl ring-1 ring-white/10 backdrop-blur-md overflow-hidden">
               <MapPanel coords={location.coords} unit={unit} />
             </div>
           </div>

@@ -5,7 +5,7 @@ import type { AlertItem } from "@/types";
 export default function AlertsPanel({ alerts }: { alerts: AlertItem[] }) {
   if (!alerts || alerts.length === 0) {
     return (
-      <div className="rounded-xl bg-slate-900/40 p-6 ring-1 ring-white/10 backdrop-blur-sm">
+      <div className="rounded-xl bg-slate-900/40 p-6 ring-1 ring-white/10 backdrop-blur-sm overflow-hidden">
         <p className="text-sm text-slate-300">No active weather alerts.</p>
       </div>
     );
@@ -17,7 +17,7 @@ export default function AlertsPanel({ alerts }: { alerts: AlertItem[] }) {
       {alerts.map((alert) => (
         <div
           key={alert.id}
-          className="rounded-xl bg-red-900/40 p-4 ring-1 ring-red-500/50"
+          className="rounded-xl bg-red-900/40 p-4 ring-1 ring-red-500/50 overflow-hidden"
         >
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-red-400" />

@@ -24,7 +24,7 @@ export default function HourlyForecast({
             return (
               <div
                 key={t}
-                className="snap-start flex flex-col items-center justify-between rounded-lg bg-slate-900/60 px-3 py-3 backdrop-blur-md ring-1 ring-white/10 shadow-sm min-w-[78px] flex-shrink-0"
+                className="snap-start flex flex-col items-center justify-between rounded-lg bg-slate-900/60 px-3 py-3 backdrop-blur-md ring-1 ring-white/10 shadow-sm min-w-[78px] flex-shrink-0 overflow-hidden"
               >
                 <p className="text-xs font-medium text-slate-200">{shortTime(t)}</p>
 

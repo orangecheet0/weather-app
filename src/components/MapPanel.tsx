@@ -10,10 +10,10 @@ export default function MapPanel({
   unit: Unit;
 }) {
   return (
-    <div className="rounded-xl bg-slate-900/40 p-6 ring-1 ring-white/10 backdrop-blur-sm">
+    <div className="rounded-xl bg-slate-900/40 p-6 ring-1 ring-white/10 backdrop-blur-sm overflow-hidden">
       <iframe
         src={windyUrl(coords, unit)}
-        className="w-full h-[460px] sm:h-[560px] lg:h-[760px] rounded-lg"
+        className="w-full h-[460px] sm:h-[560px] lg:h-[760px] rounded-lg block border-0"
         title="Weather Radar Map"
         allow="geolocation"
       />

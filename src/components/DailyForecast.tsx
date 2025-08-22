@@ -15,12 +15,11 @@ export default function DailyForecast({
       {data.time.map((t, i) => (
         <div
           key={t}
-          className="flex items-center justify-between rounded-lg bg-slate-900/60 p-4 backdrop-blur-md ring-1 ring-white/10 shadow"
+          className="flex items-center justify-between rounded-lg bg-slate-900/60 p-4 backdrop-blur-md ring-1 ring-white/10 shadow overflow-hidden"
         >
           <div className="font-medium">{shortDate(t)}</div>
 
           <div className="flex items-center gap-2 text-slate-300">
-            {/* icon */}
             {weatherIcon(data.weather_code[i] ?? 0, true)}
           </div>
 

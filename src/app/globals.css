@@ -1,3 +1,35 @@
 @import "tailwindcss";
-html, body { height: 100%; }
-:root { color-scheme: dark; }
+
+/* Fill height, clamp width, avoid horizontal scroll on iOS */
+html, body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* ← hard stop for sideways drift */
+}
+
+/* iOS notch-safe padding when needed */
+:root {
+  color-scheme: dark;
+}
+body {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Safari flex/grid overflow fix: children can shrink */
+*,
+*::before,
+*::after {
+  min-width: 0; /* ← prevents flex/grid children from pushing container wider */
+}
+
+/* Ensure embeds don’t “stick out” past rounded parents */
+iframe, img, video, svg, canvas {
+  max-width: 100%;
+  display: block;
+  border: 0;
+}
